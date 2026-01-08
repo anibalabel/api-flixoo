@@ -38,7 +38,13 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
     status: 1
   });
 
-  // Efecto para auto-generar el nombre siguiendo la fórmula: S+orde : idioma : mobre de la serie
+  const getCurrentTimestamp = () => {
+    const d = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+
+  // Efecto para auto-generar el nombre
   useEffect(() => {
     if (!isEditing && formData.tv_show_id && formData.order !== undefined) {
       const selectedShow = tvShows.find(s => s.id.toString() === formData.tv_show_id.toString());
@@ -96,6 +102,33 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
     }
   };
 
+  const toggleStatus = async (season: Season) => {
+    const newStatus = Number(season.status) === 1 ? 0 : 1;
+    
+    // Extraer ID puro para el backend
+    let showId = "";
+    if (season.tv_show_id) {
+      const showIdMatch = season.tv_show_id.match(/"(\d+)"/);
+      showId = showIdMatch ? showIdMatch[1] : season.tv_show_id;
+    }
+
+    const payload = {
+      ...season,
+      tv_show_id: showId,
+      status: newStatus,
+      updated_at: getCurrentTimestamp()
+    };
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/seasons/${season.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) refreshData();
+    } catch (e) { console.error(e); }
+  };
+
   const openEditModal = (season: Season) => {
     setIsEditing(true);
     setCurrentSeasonId(season.id);
@@ -110,7 +143,7 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
       season_name: season.season_name || '',
       tv_show_id: showId,
       order: season.order || 1,
-      status: Number(season.status) // Asegurar que sea número
+      status: Number(season.status)
     });
     setShowModal(true);
   };
@@ -127,7 +160,9 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
       season_name: formData.season_name,
       slug: generateSlug(formData.season_name || 'untitled'),
       order: formData.order,
-      status: formData.status
+      status: formData.status,
+      updated_at: getCurrentTimestamp(),
+      created_at: isEditing ? undefined : getCurrentTimestamp()
     };
 
     try {
@@ -218,13 +253,16 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
                     <td className="px-6 py-4 font-bold text-white">{s.season_name}</td>
                     <td className="px-6 py-4 text-center text-white">{s.order}</td>
                     <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border ${
+                      <button 
+                        onClick={() => toggleStatus(s)}
+                        title="Clic para cambiar estado"
+                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border transition-all active:scale-90 ${
                         isActive 
-                          ? 'bg-green-900/20 text-green-400 border-green-500/30' 
-                          : 'bg-red-900/20 text-red-500 border-red-500/30'
+                          ? 'bg-green-900/20 text-green-400 border-green-500/30 hover:bg-green-900/40' 
+                          : 'bg-red-900/20 text-red-500 border-red-500/30 hover:bg-red-900/40'
                       }`}>
-                        {isActive ? 'Activo' : 'Inactivo'}
-                      </span>
+                        {isActive ? 'ACTIVO' : 'INACTIVO'}
+                      </button>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
@@ -285,7 +323,6 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
                 </div>
               </div>
 
-              {/* Selector de Idioma */}
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Idioma</label>
                 <div className="flex gap-2 p-1 bg-gray-800 rounded-xl border border-gray-700">
@@ -324,8 +361,8 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Estado</label>
                   <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={formData.status} onChange={(e) => setFormData({...formData, status: parseInt(e.target.value)})}>
-                    <option value={1}>Publicado / Activo</option>
-                    <option value={0}>Borrador / Inactivo</option>
+                    <option value={1}>ACTIVO</option>
+                    <option value={0}>INACTIVO</option>
                   </select>
                 </div>
               </div>

@@ -52,7 +52,7 @@ $id = isset($request[1]) ? $request[1] : null;
 $method = $_SERVER['REQUEST_METHOD'];
 
 // Formato de fecha solicitado: 2026-01-08 16:41:59
-date_default_timezone_set('America/Mexico_City'); // Ajusta a tu zona horaria
+date_default_timezone_set('America/Mexico_City'); 
 
 // --- RUTAS ---
 
@@ -72,18 +72,29 @@ elseif ($resource == 'seasons') {
     } 
     elseif ($method == 'POST') {
         $data = json_decode(file_get_contents('php://input'), true);
-        $tv_show_id = '["' . $data['tv_show_id'] . '"]'; // Formato ["1"] solicitado
+        
+        // Formato ["1"] solicitado, evitando duplicar si ya viene así
+        $raw_id = (string)$data['tv_show_id'];
+        $tv_show_id = strpos($raw_id, '[') === false ? '["' . $raw_id . '"]' : $raw_id;
+        
         $ts = date('Y-m-d H:i:s');
         $sql = "INSERT INTO seasons (tv_show_id, slug, season_name, \`order\`, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        $pdo->prepare($sql)->execute([$tv_show_id, $data['slug'], $data['season_name'], $data['order'], $data['status'], $ts, $ts]);
+        $pdo->prepare($sql)->execute([$tv_show_id, $data['slug'], $data['season_name'], $data['order'], (int)$data['status'], $ts, $ts]);
         echo json_encode(["status" => "success", "id" => $pdo->lastInsertId()]);
     }
     elseif ($method == 'PUT' && $id) {
         $data = json_decode(file_get_contents('php://input'), true);
-        $tv_show_id = '["' . $data['tv_show_id'] . '"]';
+        
+        $raw_id = (string)$data['tv_show_id'];
+        $tv_show_id = strpos($raw_id, '[') === false ? '["' . $raw_id . '"]' : $raw_id;
+        
         $ts = date('Y-m-d H:i:s');
         $sql = "UPDATE seasons SET tv_show_id=?, slug=?, season_name=?, \`order\`=?, status=?, updated_at=? WHERE id=?";
-        $pdo->prepare($sql)->execute([$tv_show_id, $data['slug'], $data['season_name'], $data['order'], $data['status'], $ts, $id]);
+        $pdo->prepare($sql)->execute([$tv_show_id, $data['slug'], $data['season_name'], $data['order'], (int)$data['status'], $ts, $id]);
+        echo json_encode(["status" => "success"]);
+    }
+    elseif ($method == 'DELETE' && $id) {
+        $pdo->prepare("DELETE FROM seasons WHERE id = ?")->execute([$id]);
         echo json_encode(["status" => "success"]);
     }
 }
