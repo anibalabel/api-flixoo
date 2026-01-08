@@ -24,7 +24,7 @@ $db_host = "localhost";
 $db_port = 3306;
 $db_database = "plusmpzj_oxooflix";
 $db_username = "plusmpzj_oxooflix";
-$db_password = "50830308xS/@";
+$db_password = "5083038xS/@";
 
 try {
     $pdo = new PDO("mysql:host=$db_host;port=$db_port;dbname=$db_database", $db_username, $db_password);

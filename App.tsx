@@ -39,9 +39,18 @@ const App: React.FC = () => {
         fetch(`${API_BASE_URL}/episodes`)
       ]);
 
-      if (showsRes.ok) setTvShows(await showsRes.json());
-      if (seasonsRes.ok) setSeasons(await seasonsRes.json());
-      if (episodesRes.ok) setEpisodes(await episodesRes.json());
+      if (showsRes.ok) {
+        const data: TVShow[] = await showsRes.json();
+        setTvShows(data.sort((a, b) => b.id - a.id));
+      }
+      if (seasonsRes.ok) {
+        const data: Season[] = await seasonsRes.json();
+        setSeasons(data.sort((a, b) => b.id - a.id));
+      }
+      if (episodesRes.ok) {
+        const data: Episode[] = await episodesRes.json();
+        setEpisodes(data.sort((a, b) => b.id - a.id));
+      }
     } catch (error) {
       console.error("Error fetching data from API:", error);
     } finally {

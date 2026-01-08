@@ -15,7 +15,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
     setError('');
 
-    // Validación según credenciales solicitadas
+    // Validación según credenciales solicitadas (Versión corregida)
     setTimeout(() => {
       if (email === 'basurtobaque@gmail.com' && password === '5083038xS/@') {
         localStorage.setItem('is_auth', 'true');
