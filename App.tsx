@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { ViewType, TVShow, Season, Episode } from './types';
 import Sidebar from './components/Sidebar';
@@ -9,12 +8,12 @@ import EpisodesSection from './components/EpisodesSection';
 import BackendCodeSection from './components/BackendCodeSection';
 import Dashboard from './components/Dashboard';
 
-// Se agrega /api.php para asegurar compatibilidad con el backend proporcionado
 const API_BASE_URL = 'https://apiflixy.plusmovie.pw/api.php';
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ViewType>('DASHBOARD');
   const [isLoading, setIsLoading] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   const [tvShows, setTvShows] = useState<TVShow[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
@@ -70,16 +69,33 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar activeView={activeView} setActiveView={setActiveView} />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header activeView={activeView} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-950">
+    <div className="flex h-screen overflow-hidden bg-gray-950">
+      <Sidebar 
+        activeView={activeView} 
+        setActiveView={(v) => { setActiveView(v); setIsSidebarOpen(false); }} 
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+      />
+      
+      <div className="flex-1 flex flex-col min-w-0 relative">
+        <Header 
+          activeView={activeView} 
+          toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
+        />
+        <main className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-7xl mx-auto">
             {renderContent()}
           </div>
         </main>
       </div>
+
+      {/* Overlay para móvil cuando el sidebar está abierto */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        ></div>
+      )}
     </div>
   );
 };

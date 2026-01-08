@@ -1,13 +1,14 @@
-
 import React from 'react';
 import { ViewType } from '../types';
 
 interface SidebarProps {
   activeView: ViewType;
   setActiveView: (view: ViewType) => void;
+  isOpen: boolean;
+  onClose: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, isOpen, onClose }) => {
   const navItems = [
     { id: 'DASHBOARD', label: 'Dashboard', icon: 'fa-chart-pie' },
     { id: 'TV_SHOWS', label: 'TV Shows', icon: 'fa-tv' },
@@ -17,14 +18,21 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) => {
   ];
 
   return (
-    <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col h-full z-30">
-      <div className="p-6">
+    <aside className={`
+      fixed inset-y-0 left-0 w-64 bg-gray-900 border-r border-gray-800 flex flex-col h-full z-40 transition-transform duration-300 ease-in-out
+      lg:relative lg:translate-x-0
+      ${isOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+    `}>
+      <div className="p-6 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white text-xl font-bold">
             <i className="fas fa-play"></i>
           </div>
           <h1 className="text-xl font-bold tracking-tight text-white">OxooFlix</h1>
         </div>
+        <button onClick={onClose} className="lg:hidden text-gray-500 hover:text-white">
+          <i className="fas fa-times"></i>
+        </button>
       </div>
 
       <nav className="flex-1 px-4 space-y-2 py-4">
