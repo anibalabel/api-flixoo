@@ -229,6 +229,10 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
             <tbody className="divide-y divide-gray-800">
               {episodes.map((ep) => {
                 const epImg = getImageUrl(ep.poster);
+                const show = tvShows.find(s => Number(s.id) === Number(ep.series_id));
+                const season = seasons.find(s => Number(s.id) === Number(ep.season_id));
+                const hasUrl = ep.file_url && ep.file_url.trim() !== "";
+
                 return (
                   <tr key={ep.id} className="hover:bg-gray-800/30 transition-colors group">
                     <td className="px-4 md:px-6 py-4 font-black text-indigo-400">#{ep.order}</td>
@@ -244,7 +248,17 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-white font-bold truncate text-xs md:text-sm">{ep.episode_name}</p>
-                          <p className="text-[10px] text-gray-500 font-mono truncate mt-1">{ep.file_url || 'Sin URL'}</p>
+                          {/* Información de Serie y Temporada Solicitada */}
+                          <p className="text-[9px] text-indigo-400 font-bold uppercase tracking-wider mb-1 mt-0.5 truncate">
+                            {show?.title || 'Serie Desconocida'} <span className="mx-1 text-gray-700">•</span> {season?.season_name || 'Temporada Desconocida'}
+                          </p>
+                          {/* URL con Indicador Rojo para "Sin URL" */}
+                          <div className="flex items-center gap-1.5 mt-1">
+                            {!hasUrl && <i className="fas fa-circle text-red-500 text-[6px] animate-pulse"></i>}
+                            <p className={`text-[10px] font-mono truncate ${!hasUrl ? 'text-red-400 font-bold' : 'text-gray-500'}`}>
+                                {hasUrl ? ep.file_url : 'Sin URL'}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </td>

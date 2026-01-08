@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { Season, TVShow } from '../types';
+import { Season, TVShow, Episode } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
 
 const API_BASE_URL = 'https://apiflixy.plusmovie.pw/api.php';
@@ -8,6 +7,7 @@ const API_BASE_URL = 'https://apiflixy.plusmovie.pw/api.php';
 interface SeasonsSectionProps {
   seasons: Season[];
   tvShows: TVShow[];
+  episodes: Episode[];
   setSeasons: React.Dispatch<React.SetStateAction<Season[]>>;
   refreshData: () => void;
 }
@@ -21,7 +21,7 @@ interface FetchedSeason {
 
 type LanguageType = 'LAT' | 'CAST' | 'SUB';
 
-const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSeasons, refreshData }) => {
+const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, episodes, setSeasons, refreshData }) => {
   const [showModal, setShowModal] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -226,6 +226,7 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
                 <th className="px-6 py-4 font-bold">SERIE ID</th>
                 <th className="px-6 py-4 font-bold">NOMBRE</th>
                 <th className="px-6 py-4 font-bold text-center">ORDEN</th>
+                <th className="px-6 py-4 font-bold text-center">EPISODIOS</th>
                 <th className="px-6 py-4 font-bold">ESTADO</th>
                 <th className="px-6 py-4 font-bold text-right">ACCIONES</th>
               </tr>
@@ -233,6 +234,9 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
             <tbody className="divide-y divide-gray-800">
               {seasons.map((s) => {
                 const isActive = Number(s.status) === 1;
+                // Calculamos el número de episodios pertenecientes a esta temporada
+                const epCount = episodes.filter(ep => Number(ep.season_id) === Number(s.id)).length;
+                
                 return (
                   <tr key={s.id} className="hover:bg-gray-800/30 transition-colors group">
                     <td className="px-6 py-4">
@@ -241,7 +245,12 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
                       </span>
                     </td>
                     <td className="px-6 py-4 font-bold text-white">{s.season_name}</td>
-                    <td className="px-6 py-4 text-center text-white">{s.order}</td>
+                    <td className="px-6 py-4 text-center text-white font-mono">{s.order}</td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="inline-flex items-center justify-center min-w-[2.5rem] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 py-1 px-2 rounded-lg font-black font-mono text-xs">
+                         {epCount}
+                      </span>
+                    </td>
                     <td className="px-6 py-4">
                       <button 
                         onClick={() => toggleStatus(s)}
@@ -265,7 +274,7 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
               })}
               {seasons.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-gray-500 italic">No hay temporadas registradas.</td>
+                  <td colSpan={6} className="px-6 py-10 text-center text-gray-500 italic">No hay temporadas registradas.</td>
                 </tr>
               )}
             </tbody>

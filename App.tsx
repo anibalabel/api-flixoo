@@ -79,7 +79,7 @@ const App: React.FC = () => {
       case 'TV_SHOWS':
         return <TVShowsSection tvShows={tvShows} refreshData={fetchData} />;
       case 'SEASONS':
-        return <SeasonsSection seasons={seasons} tvShows={tvShows} setSeasons={setSeasons} refreshData={fetchData} />;
+        return <SeasonsSection seasons={seasons} tvShows={tvShows} episodes={episodes} setSeasons={setSeasons} refreshData={fetchData} />;
       case 'EPISODES':
         return <EpisodesSection episodes={episodes} seasons={seasons} tvShows={tvShows} setEpisodes={setEpisodes} refreshData={fetchData} />;
       case 'API_CODE':
