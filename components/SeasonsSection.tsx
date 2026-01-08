@@ -110,7 +110,7 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
       season_name: season.season_name || '',
       tv_show_id: showId,
       order: season.order || 1,
-      status: season.status || 1
+      status: Number(season.status) // Asegurar que sea número
     });
     setShowModal(true);
   };
@@ -206,28 +206,35 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
-              {seasons.map((s) => (
-                <tr key={s.id} className="hover:bg-gray-800/30 transition-colors group">
-                  <td className="px-6 py-4">
-                    <span className="text-[10px] font-mono bg-indigo-900/30 text-indigo-300 px-2 py-1 rounded border border-indigo-500/20">
-                        {s.tv_show_id || 'N/A'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 font-medium text-white">{s.season_name}</td>
-                  <td className="px-6 py-4 text-center text-white">{s.order}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${s.status === 1 ? 'bg-green-900/20 text-green-400 border border-green-500/30' : 'bg-red-900/20 text-red-400 border border-red-500/30'}`}>
-                      {s.status === 1 ? 'Activo' : 'Inactivo'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button onClick={() => openEditModal(s)} title="Editar" className="text-gray-400 hover:text-indigo-400 p-2 transition-colors"><i className="fas fa-edit"></i></button>
-                      <button onClick={() => setDeleteId(s.id)} title="Eliminar" className="text-gray-400 hover:text-red-400 p-2 transition-colors"><i className="fas fa-trash"></i></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {seasons.map((s) => {
+                const isActive = Number(s.status) === 1;
+                return (
+                  <tr key={s.id} className="hover:bg-gray-800/30 transition-colors group">
+                    <td className="px-6 py-4">
+                      <span className="text-[10px] font-mono bg-indigo-900/30 text-indigo-300 px-2 py-1 rounded border border-indigo-500/20">
+                          {s.tv_show_id || 'N/A'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 font-bold text-white">{s.season_name}</td>
+                    <td className="px-6 py-4 text-center text-white">{s.order}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border ${
+                        isActive 
+                          ? 'bg-green-900/20 text-green-400 border-green-500/30' 
+                          : 'bg-red-900/20 text-red-500 border-red-500/30'
+                      }`}>
+                        {isActive ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => openEditModal(s)} title="Editar" className="text-gray-400 hover:text-indigo-400 p-2 transition-colors"><i className="fas fa-edit"></i></button>
+                        <button onClick={() => setDeleteId(s.id)} title="Eliminar" className="text-gray-400 hover:text-red-400 p-2 transition-colors"><i className="fas fa-trash"></i></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {seasons.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-6 py-10 text-center text-gray-500 italic">No hay temporadas registradas.</td>
@@ -259,7 +266,7 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
       {showModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-scaleIn">
-            <div className="p-8 border-b border-gray-800">
+            <div className="p-8 border-b border-gray-800 bg-gray-950/50">
               <h4 className="text-2xl font-black text-white tracking-tighter uppercase">{isEditing ? 'Editar Temporada' : 'Crear Temporada'}</h4>
             </div>
             <div className="p-8 space-y-5">
@@ -317,8 +324,8 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Estado</label>
                   <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={formData.status} onChange={(e) => setFormData({...formData, status: parseInt(e.target.value)})}>
-                    <option value={1}>Publicado</option>
-                    <option value={0}>Borrador</option>
+                    <option value={1}>Publicado / Activo</option>
+                    <option value={0}>Borrador / Inactivo</option>
                   </select>
                 </div>
               </div>
