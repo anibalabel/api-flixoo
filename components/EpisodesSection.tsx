@@ -31,6 +31,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
   const [isSearching, setIsSearching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isBulkRegistering, setIsBulkRegistering] = useState(false);
+  const [isUpdatingFromTMDB, setIsUpdatingFromTMDB] = useState(false);
   
   // --- Configuración TMDB ---
   const [tmdbToken, setTmdbToken] = useState(localStorage.getItem('tmdb_token') || DEFAULT_TMDB_TOKEN);
@@ -88,6 +89,67 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       setSelectedNumbers([]);
     } else {
       setSelectedNumbers(fetchedEpisodes.map(fe => fe.episode_number));
+    }
+  };
+
+  // --- LÓGICA DE ACTUALIZACIÓN DESDE TMDB (MODAL EDITAR) ---
+  const handleUpdateFromTMDB = async () => {
+    if (!editFormData.series_id || !editFormData.season_id || !editFormData.order) {
+      alert("Faltan datos de referencia (Serie, Temporada o Episodio) para consultar TMDB.");
+      return;
+    }
+
+    setIsUpdatingFromTMDB(true);
+    try {
+      // 1. Obtener tmdb_id de la serie
+      const parentShow = tvShows.find(s => Number(s.id) === Number(editFormData.series_id));
+      if (!parentShow || !parentShow.tmdb_id) throw new Error("No se encontró el TMDB ID de la serie.");
+
+      // 2. Obtener número de temporada (order)
+      const parentSeason = seasons.find(s => Number(s.id) === Number(editFormData.season_id));
+      if (!parentSeason) throw new Error("No se encontró la temporada asociada.");
+
+      const series_tmdb_id = parentShow.tmdb_id;
+      const season_num = parentSeason.order;
+      const episode_num = editFormData.order;
+      const cleanToken = tmdbToken.trim();
+
+      const url = `https://api.themoviedb.org/3/tv/${series_tmdb_id}/season/${season_num}/episode/${episode_num}?language=es-ES`;
+      
+      let response = await fetch(url, {
+        headers: { 
+          'Authorization': `Bearer ${cleanToken}`, 
+          'Accept': 'application/json' 
+        }
+      });
+
+      if (response.status === 401) {
+        const fallbackUrl = `https://api.themoviedb.org/3/tv/${series_tmdb_id}/season/${season_num}/episode/${episode_num}?api_key=${cleanToken}&language=es-ES`;
+        response = await fetch(fallbackUrl);
+      }
+
+      if (!response.ok) throw new Error(`Error TMDB (${response.status}): No se encontró el episodio.`);
+
+      const data = await response.json();
+      
+      // Actualizar el estado del formulario con los nuevos datos
+      const posterJson = JSON.stringify({ original_image: `https://image.tmdb.org/t/p/w500${data.still_path}` }).replace(/\//g, '\\/');
+      
+      setEditFormData(prev => ({
+        ...prev,
+        episode_name: data.name || prev.episode_name,
+        description: data.overview || prev.description,
+        runtime: data.runtime ? `${data.runtime} min` : prev.runtime,
+        poster: posterJson
+      }));
+
+      alert("Datos actualizados desde TMDB con éxito. No olvides presionar 'Guardar Cambios'.");
+
+    } catch (error: any) {
+      console.error(error);
+      alert(`Error al actualizar: ${error.message}`);
+    } finally {
+      setIsUpdatingFromTMDB(false);
     }
   };
 
@@ -514,12 +576,24 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                 </div>
               </div>
             </div>
-            <div className="mt-8 flex justify-end gap-4">
-              <button onClick={() => setShowEditModal(false)} className="text-gray-500 font-bold px-4 transition-colors hover:text-white uppercase text-xs tracking-widest">Cancelar</button>
-              <button onClick={handleUpdate} disabled={isSaving} className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg shadow-indigo-600/20 active:scale-95 disabled:opacity-50 flex items-center gap-2">
-                {isSaving ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-save"></i>}
-                {isSaving ? 'Guardando...' : 'Guardar Cambios'}
+            <div className="mt-8 flex items-center justify-between border-t border-gray-800 pt-6">
+              {/* Botón de Actualizar desde TMDB (Update) */}
+              <button 
+                onClick={handleUpdateFromTMDB}
+                disabled={isUpdatingFromTMDB}
+                className="bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white px-5 py-3 rounded-xl font-bold uppercase text-[10px] tracking-widest shadow-lg transition-all border border-indigo-500/30 flex items-center gap-2 active:scale-95 disabled:opacity-50"
+              >
+                {isUpdatingFromTMDB ? <i className="fas fa-sync animate-spin"></i> : <i className="fas fa-magic"></i>}
+                {isUpdatingFromTMDB ? 'Consultando...' : 'Update TMDB'}
               </button>
+
+              <div className="flex gap-4">
+                <button onClick={() => setShowEditModal(false)} className="text-gray-500 font-bold px-4 transition-colors hover:text-white uppercase text-xs tracking-widest">Cancelar</button>
+                <button onClick={handleUpdate} disabled={isSaving} className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg shadow-indigo-600/20 active:scale-95 disabled:opacity-50 flex items-center gap-2">
+                  {isSaving ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-save"></i>}
+                  {isSaving ? 'Guardando...' : 'Guardar Cambios'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
