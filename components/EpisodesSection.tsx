@@ -3,7 +3,6 @@ import { Episode, Season, TVShow } from '../types';
 
 const API_BASE_URL = 'https://apiflixy.plusmovie.pw/api.php';
 
-// Token de Acceso v4 de TMDB
 const DEFAULT_TMDB_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIxNTU5ZjFmMGE4ODZhYTdlOTNmMjJlMDljNDdiOWM5ZSIsIm5iZiI6MTU4MzcwMDU0Mi44NCwic3ViIjoiNWU2NTVhM2U0NTlhZDYwMDExNTkzYzcwIiwic2NvcGVzIjpbImFwaV9yZWFkIl0sInZlcnNpb24iOjF9.ZOWuTVPOngZqSEgrSfBKN8AXpK77ADFwIvJibc3-ycI';
 
 interface EpisodesSectionProps {
@@ -23,7 +22,6 @@ interface FetchedEpisode {
 }
 
 const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tvShows, setEpisodes, refreshData }) => {
-  // --- Estados de UI ---
   const [showImportModal, setShowImportModal] = useState(false);
   const [showBulkUrlModal, setShowBulkUrlModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -32,55 +30,65 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
   const [isSaving, setIsSaving] = useState(false);
   const [isBulkRegistering, setIsBulkRegistering] = useState(false);
   const [isProcessingBulkUrls, setIsProcessingBulkUrls] = useState(false);
-  
-  // --- Configuración TMDB ---
   const [tmdbToken, setTmdbToken] = useState(localStorage.getItem('tmdb_token') || DEFAULT_TMDB_TOKEN);
-  
-  // --- Estados de Importación TMDB ---
   const [fetchedEpisodes, setFetchedEpisodes] = useState<FetchedEpisode[]>([]);
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
   const [registeringIds, setRegisteringIds] = useState<number[]>([]);
   const [searchParams, setSearchParams] = useState({ series_id: 0, season_id: 0 });
-  
-  // --- Estados de Lote URLs ---
   const [bulkUrlParams, setBulkUrlParams] = useState({ series_id: 0, season_id: 0, startEpisodeId: 0, urls: '' });
-  const [bulkUrlStatus, setBulkUrlStatus] = useState({ current: 0, total: 0, label: '' });
-
   const [editFormData, setEditFormData] = useState<Partial<Episode>>({});
-
-  useEffect(() => {
-    setBulkUrlParams(prev => ({ ...prev, startEpisodeId: 0 }));
-  }, [bulkUrlParams.series_id, bulkUrlParams.season_id]);
 
   useEffect(() => {
     localStorage.setItem('tmdb_token', tmdbToken);
   }, [tmdbToken]);
 
-  // --- Utilidades ---
   const getImageUrl = (input: any) => {
-    if (!input) return 'https://via.placeholder.com/500x281?text=Sin+Imagen';
+    const placeholder = 'https://via.placeholder.com/500x281?text=Sin+Imagen';
+    if (!input || input === "" || input === "null" || input === "[]" || input === "{}") return placeholder;
+
     let path = "";
-    if (typeof input === 'object' && input !== null) {
-      path = input.original_image || "";
-    } else if (typeof input === 'string') {
-      const cleaned = input.replace(/\\\//g, '/'); 
-      if (cleaned.startsWith('http')) {
-        path = cleaned;
+
+    try {
+      if (typeof input === 'object' && input !== null) {
+        path = input.original_image || input.thumbnail || input.still_path || "";
       } else {
-        try {
-          const data = JSON.parse(cleaned);
-          path = data.original_image || "";
-        } catch (e) {
-          path = cleaned;
+        const str = String(input).trim();
+        if (str.startsWith('{')) {
+          try {
+            const data = JSON.parse(str);
+            path = data.original_image || data.thumbnail || data.still_path || "";
+          } catch (e) {
+            const match = str.match(/"(?:original_image|thumbnail|still_path)"\s*:\s*"([^"]+)"/);
+            path = match ? match[1] : str;
+          }
+        } else {
+          path = str;
         }
       }
+    } catch (error) {
+      return placeholder;
     }
-    if (path && path.startsWith('/')) {
-        return `https://image.tmdb.org/t/p/w500${path}`;
+
+    if (!path || path === "null" || path === "") return placeholder;
+
+    // Limpiar escapes de slashes \/
+    path = path.replace(/\\\//g, '/').replace(/\\/g, '');
+
+    if (path.startsWith('/') && !path.startsWith('//')) {
+      return `https://image.tmdb.org/t/p/w500${path}`;
     }
-    return (!path || path === "" || path === "null" || path === ".") 
-      ? 'https://via.placeholder.com/500x281?text=URL+Invalida' 
-      : path;
+
+    if (path.startsWith('http')) {
+      return path;
+    }
+
+    if (path.includes('uploads/')) {
+      const domain = API_BASE_URL.split('/api.php')[0];
+      const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+      return `${domain}/${cleanPath}`;
+    }
+
+    return path;
   };
 
   const getCurrentTimestamp = () => {
@@ -95,70 +103,57 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       return;
     }
     const urlList = bulkUrlParams.urls.split('\n').map(u => u.trim()).filter(u => u !== '');
-    if (urlList.length === 0) {
-      alert("No se encontraron URLs válidas.");
-      return;
-    }
     const seasonEpisodes = episodes
       .filter(ep => Number(ep.season_id) === Number(bulkUrlParams.season_id))
       .sort((a, b) => a.order - b.order);
     const startIndex = seasonEpisodes.findIndex(ep => Number(ep.id) === Number(bulkUrlParams.startEpisodeId));
     if (startIndex === -1) {
-      alert("No se pudo localizar el episodio de inicio.");
+      alert("Episodio de inicio no encontrado.");
       return;
     }
     const targetEpisodes = seasonEpisodes.slice(startIndex);
     const maxItems = Math.min(urlList.length, targetEpisodes.length);
     setIsProcessingBulkUrls(true);
-    setBulkUrlStatus({ current: 0, total: maxItems, label: 'Actualizando lote...' });
-    let count = 0;
     const timestamp = getCurrentTimestamp();
     for (let i = 0; i < maxItems; i++) {
       const ep = targetEpisodes[i];
       const url = urlList[i];
-      setBulkUrlStatus({ current: i + 1, total: maxItems, label: `Actualizando: Ep ${ep.order}` });
       try {
         const payload = { ...ep, file_url: url, file_source: 'embed', source_type: 'embed', updated_at: timestamp };
-        const res = await fetch(`${API_BASE_URL}/episodes/${ep.id}`, {
+        await fetch(`${API_BASE_URL}/episodes/${ep.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        if (res.ok) count++;
       } catch (error) { console.error(error); }
     }
     setIsProcessingBulkUrls(false);
     refreshData();
     setShowBulkUrlModal(false);
-    alert(`Completado: ${count} episodios actualizados.`);
   };
 
   const handleSearchEpisodes = async () => {
-    if (!searchParams.series_id || !searchParams.season_id) {
-      alert("Selecciona serie y temporada.");
-      return;
-    }
+    if (!searchParams.series_id || !searchParams.season_id) return;
     const selectedShow = tvShows.find(s => Number(s.id) === searchParams.series_id);
     const selectedSeason = seasons.find(s => Number(s.id) === searchParams.season_id);
     if (!selectedShow || !selectedSeason) return;
     setIsSearching(true);
-    setFetchedEpisodes([]);
     try {
       const url = `https://api.themoviedb.org/3/tv/${selectedShow.tmdb_id}/season/${selectedSeason.order}?language=es-ES`;
       const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${tmdbToken.trim()}`, 'Accept': 'application/json' }
+        headers: { 'Authorization': `Bearer ${tmdbToken.trim()}` }
       });
-      if (!response.ok) throw new Error("Error TMDB");
       const data = await response.json();
       setFetchedEpisodes(data.episodes || []);
-    } catch (error) { alert("Error al buscar episodios."); }
+    } catch (error) { console.error(error); }
     finally { setIsSearching(false); }
   };
 
   const registerFetchedEpisode = async (fe: FetchedEpisode) => {
     if (registeringIds.includes(fe.episode_number)) return;
     setRegisteringIds(prev => [...prev, fe.episode_number]);
-    const posterJson = JSON.stringify({ original_image: `https://image.tmdb.org/t/p/w500${fe.still_path}` }).replace(/\//g, '\\/');
+    // Guardar con escapes manuales para la DB de Oxoo
+    const posterJson = `{"original_image":"${fe.still_path || ""}"}`.replace(/\//g, '\\/');
     const timestamp = getCurrentTimestamp();
     const payload = {
       season_id: searchParams.season_id,
@@ -177,18 +172,17 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       updated_at: timestamp
     };
     try {
-      const res = await fetch(`${API_BASE_URL}/episodes`, {
+      await fetch(`${API_BASE_URL}/episodes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (res.ok) refreshData();
+      refreshData();
     } catch (error) { console.error(error); }
     finally { setRegisteringIds(prev => prev.filter(id => id !== fe.episode_number)); }
   };
 
   const handleBulkRegister = async () => {
-    if (selectedNumbers.length === 0) return;
     setIsBulkRegistering(true);
     for (const num of selectedNumbers) {
       const fe = fetchedEpisodes.find(e => e.episode_number === num);
@@ -216,21 +210,6 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
     finally { setIsSaving(false); }
   };
 
-  const executeDelete = async () => {
-    if (!deleteId) return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/episodes/${deleteId}`, { 
-        method: 'DELETE',
-        headers: { 'Accept': 'application/json' }
-      });
-      if (res.ok) {
-        refreshData();
-        setDeleteId(null);
-      }
-    } catch (error) { console.error(error); }
-  };
-
-  // Filtrado robusto de temporadas según la serie seleccionada
   const filteredSeasons = seasons.filter(s => {
     if (!searchParams.series_id) return false;
     const tvShowIdStr = String(s.tv_show_id || '');
@@ -264,37 +243,43 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
-              {episodes.map((ep) => (
-                <tr key={ep.id} className="hover:bg-gray-800/30 transition-colors group">
-                  <td className="px-6 py-4 font-black text-indigo-400">#{ep.order}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-4">
-                      <img src={getImageUrl(ep.poster)} alt={ep.episode_name} className="w-24 h-14 rounded-lg object-cover border border-gray-700 bg-gray-800 shadow-xl" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-white font-bold truncate text-sm">{ep.episode_name}</p>
-                        <p className="text-[10px] text-gray-500 font-mono truncate mt-1">{ep.file_url || 'Sin URL configurada'}</p>
+              {episodes.map((ep) => {
+                const epImg = getImageUrl(ep.poster);
+                return (
+                  <tr key={ep.id} className="hover:bg-gray-800/30 transition-colors group">
+                    <td className="px-6 py-4 font-black text-indigo-400">#{ep.order}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-24 h-14 rounded-lg overflow-hidden border border-gray-700 bg-gray-800 shadow-xl">
+                          <img 
+                            src={epImg} 
+                            alt={ep.episode_name} 
+                            className="w-full h-full object-cover" 
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://via.placeholder.com/500x281?text=Error'; }}
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-white font-bold truncate text-sm">{ep.episode_name}</p>
+                          <p className="text-[10px] text-gray-500 font-mono truncate mt-1">{ep.file_url || 'Sin URL configurada'}</p>
+                          <p className="text-[8px] text-indigo-400/60 font-mono truncate mt-0.5">{epImg}</p>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button onClick={() => { setEditFormData(ep); setShowEditModal(true); }} className="text-gray-400 hover:text-indigo-400 p-2 transition-colors"><i className="fas fa-edit"></i></button>
-                      <button onClick={() => setDeleteId(ep.id)} className="text-gray-400 hover:text-red-400 p-2 transition-colors"><i className="fas fa-trash"></i></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {episodes.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="px-6 py-10 text-center text-gray-500 italic">No hay episodios registrados.</td>
-                </tr>
-              )}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => { setEditFormData(ep); setShowEditModal(true); }} className="text-gray-400 hover:text-indigo-400 p-2 transition-colors"><i className="fas fa-edit"></i></button>
+                        <button onClick={() => setDeleteId(ep.id)} className="text-gray-400 hover:text-red-400 p-2 transition-colors"><i className="fas fa-trash"></i></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* MODAL IMPORTAR TMDB */}
+      {/* MODALES */}
       {showImportModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-scaleIn">
@@ -323,226 +308,129 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                 </div>
               </div>
               
-              <button onClick={handleSearchEpisodes} disabled={isSearching || !searchParams.season_id} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-indigo-600/20 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
-                {isSearching ? <i className="fas fa-circle-notch animate-spin"></i> : <i className="fas fa-search"></i>}
-                OBTENER EPISODIOS DE TMDB
+              <button onClick={handleSearchEpisodes} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all shadow-xl">
+                {isSearching ? <i className="fas fa-spinner animate-spin mr-2"></i> : <i className="fas fa-search mr-2"></i>}
+                BUSCAR EN TMDB
               </button>
 
               <div className="grid grid-cols-1 gap-3">
-                {fetchedEpisodes.length > 0 ? (
-                  fetchedEpisodes.map(fe => {
-                    const isRegistered = episodes.some(e => Number(e.season_id) === searchParams.season_id && e.order === fe.episode_number);
-                    const isSelected = selectedNumbers.includes(fe.episode_number);
-                    return (
-                      <div key={fe.episode_number} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${isRegistered ? 'bg-green-900/10 border-green-500/20 opacity-80' : 'bg-gray-800/50 border-gray-700 hover:border-indigo-500/50'}`}>
-                         <div className="w-10 text-indigo-400 font-black">#{fe.episode_number}</div>
-                         <div className="flex-1 min-w-0">
-                           <div className="text-white font-bold text-sm truncate">{fe.name}</div>
-                           <div className="text-xs text-gray-500 line-clamp-1">{fe.overview || 'Sin descripción disponible.'}</div>
-                         </div>
-                         {isRegistered ? (
-                           <span className="text-green-500 text-[10px] font-black uppercase whitespace-nowrap"><i className="fas fa-check-circle mr-1"></i>Registrado</span>
-                         ) : (
-                           <button 
-                             onClick={() => setSelectedNumbers(prev => isSelected ? prev.filter(n=>n!==fe.episode_number) : [...prev, fe.episode_number])}
-                             className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all whitespace-nowrap ${isSelected ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-700 text-gray-400 hover:text-white'}`}
-                           >
-                             {isSelected ? 'Seleccionado' : 'Seleccionar'}
-                           </button>
-                         )}
+                {fetchedEpisodes.map(fe => {
+                  const isRegistered = episodes.some(e => Number(e.season_id) === searchParams.season_id && e.order === fe.episode_number);
+                  return (
+                    <div key={fe.episode_number} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${isRegistered ? 'bg-gray-800/20 border-gray-800 opacity-60' : 'bg-gray-800/40 border-gray-700 hover:border-indigo-500/50'}`}>
+                      <div className="w-20 h-12 bg-gray-900 rounded-lg overflow-hidden flex-shrink-0">
+                        <img src={getImageUrl(fe.still_path)} className="w-full h-full object-cover" />
                       </div>
-                    );
-                  })
-                ) : (
-                  !isSearching && searchParams.season_id !== 0 && (
-                    <div className="text-center py-10 text-gray-500 italic">Haz clic en buscar para listar episodios.</div>
-                  )
-                )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-white truncate">E{fe.episode_number}: {fe.name}</p>
+                        <p className="text-[10px] text-gray-500 truncate">{fe.overview || 'Sin descripción'}</p>
+                      </div>
+                      <button 
+                        disabled={isRegistered || registeringIds.includes(fe.episode_number)}
+                        onClick={() => registerFetchedEpisode(fe)}
+                        className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${isRegistered ? 'text-green-500' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}
+                      >
+                        {registeringIds.includes(fe.episode_number) ? <i className="fas fa-spinner animate-spin"></i> : isRegistered ? 'Listo' : 'Importar'}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-            
-            <div className="p-8 bg-gray-950/50 flex justify-end gap-4 border-t border-gray-800">
-               <button onClick={() => setShowImportModal(false)} className="text-gray-500 hover:text-white font-bold px-4">Cerrar</button>
-               <button onClick={handleBulkRegister} disabled={isBulkRegistering || selectedNumbers.length === 0} className="bg-green-600 hover:bg-green-500 text-white px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-20 flex items-center gap-2 transition-all">
-                 {isBulkRegistering ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-plus"></i>}
-                 {isBulkRegistering ? 'Procesando...' : `Registrar ${selectedNumbers.length} Seleccionados`}
-               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL LOTE DE URLS */}
-      {showBulkUrlModal && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-xl flex items-center justify-center z-[60] p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-[0_0_80px_rgba(0,0,0,0.8)] animate-scaleIn">
-            <div className="p-8 border-b border-gray-800 flex justify-between items-center bg-gray-950/80">
-              <div>
-                <h4 className="text-2xl font-black text-white uppercase tracking-tighter">Importar Lote URLs</h4>
-                <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest mt-1">Configuración de Origen: Embed</p>
-              </div>
-              <button onClick={() => setShowBulkUrlModal(false)} className="w-10 h-10 rounded-full bg-gray-800 text-gray-400 hover:text-white hover:bg-red-600 transition-all flex items-center justify-center shadow-lg">
-                <i className="fas fa-times text-lg"></i>
-              </button>
-            </div>
-            
-            <div className="p-8 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">1. Serie</label>
-                  <select 
-                    className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 py-4 text-white text-sm outline-none transition-all shadow-inner"
-                    value={bulkUrlParams.series_id}
-                    onChange={(e) => setBulkUrlParams({...bulkUrlParams, series_id: parseInt(e.target.value)})}
-                  >
-                    <option value={0}>Selecciona serie...</option>
-                    {tvShows.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">2. Temporada</label>
-                  <select 
-                    className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 py-4 text-white text-sm outline-none transition-all shadow-inner"
-                    value={bulkUrlParams.season_id}
-                    onChange={(e) => setBulkUrlParams({...bulkUrlParams, season_id: parseInt(e.target.value)})}
-                    disabled={!bulkUrlParams.series_id}
-                  >
-                    <option value={0}>Selecciona temporada...</option>
-                    {seasons
-                      .filter(s => {
-                        const showIdStr = String(s.tv_show_id || '');
-                        return showIdStr.includes(`"${bulkUrlParams.series_id}"`) || showIdStr.includes(`${bulkUrlParams.series_id}`);
-                      })
-                      .map(s => <option key={s.id} value={s.id}>{s.season_name}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">3. Empezar desde Episodio</label>
-                <select 
-                  className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 py-4 text-white text-sm outline-none transition-all shadow-inner disabled:opacity-50"
-                  value={bulkUrlParams.startEpisodeId}
-                  onChange={(e) => setBulkUrlParams({...bulkUrlParams, startEpisodeId: parseInt(e.target.value)})}
-                  disabled={!bulkUrlParams.season_id}
-                >
-                  <option value={0}>Selecciona episodio inicial...</option>
-                  {episodes
-                    .filter(ep => Number(ep.season_id) === Number(bulkUrlParams.season_id))
-                    .sort((a, b) => a.order - b.order)
-                    .map(ep => <option key={ep.id} value={ep.id}>#{ep.order} - {ep.episode_name}</option>)}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">4. Lote de URLs (Una por línea)</label>
-                <textarea 
-                  className="w-full h-40 bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 py-4 text-indigo-300 text-xs font-mono outline-none transition-all resize-none shadow-inner custom-scrollbar"
-                  placeholder="Pega las URLs aquí..."
-                  value={bulkUrlParams.urls}
-                  onChange={(e) => setBulkUrlParams({...bulkUrlParams, urls: e.target.value})}
-                />
-              </div>
-            </div>
-
-            <div className="p-8 bg-gray-950/80 flex justify-end gap-5 border-t border-gray-800">
-              <button onClick={() => setShowBulkUrlModal(false)} className="text-gray-500 hover:text-white font-black transition-colors uppercase text-[10px] tracking-widest">Cancelar</button>
-              <button 
-                onClick={handleProcessBulkUrls} 
-                disabled={isProcessingBulkUrls || !bulkUrlParams.startEpisodeId || !bulkUrlParams.urls.trim()}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-900/40 disabled:opacity-20 flex items-center gap-3 transition-all active:scale-95"
-              >
-                {isProcessingBulkUrls ? <i className="fas fa-sync animate-spin"></i> : <i className="fas fa-bolt"></i>}
-                {isProcessingBulkUrls ? 'ACTUALIZANDO...' : 'ACTUALIZAR LOTE'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL ELIMINAR */}
-      {deleteId && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-          <div className="bg-gray-900 border border-red-900/30 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl">
-            <div className="p-8 text-center">
-              <div className="w-16 h-16 bg-red-900/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/30">
-                <i className="fas fa-exclamation-triangle text-2xl"></i>
-              </div>
-              <h4 className="text-xl font-bold text-white mb-2">Eliminar Episodio</h4>
-              <p className="text-gray-400 text-sm">Esta acción borrará permanentemente el episodio. ¿Continuar?</p>
-            </div>
-            <div className="flex border-t border-gray-800">
-              <button onClick={() => setDeleteId(null)} className="flex-1 px-4 py-4 text-gray-400 font-bold hover:bg-gray-800 transition-colors">Cancelar</button>
-              <button onClick={executeDelete} className="flex-1 px-4 py-4 bg-red-600/10 text-red-500 font-bold hover:bg-red-600 hover:text-white transition-all border-l border-gray-800">Eliminar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL EDITAR */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[60] p-4">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-scaleIn">
             <div className="p-8 border-b border-gray-800 bg-gray-950/50">
-              <h4 className="text-2xl font-black text-white uppercase tracking-tighter">Editar Episodio</h4>
+              <h4 className="text-xl font-black text-white uppercase tracking-tighter">Editar Episodio</h4>
             </div>
             <div className="p-8 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
               <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Nombre</label>
-                <input 
-                  type="text" 
-                  className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" 
-                  value={editFormData.episode_name || ''} 
-                  onChange={(e) => setEditFormData({...editFormData, episode_name: e.target.value})}
-                />
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Nombre</label>
+                <input type="text" className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={editFormData.episode_name} onChange={(e)=>setEditFormData({...editFormData, episode_name: e.target.value})} />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">URL del Video</label>
-                <textarea 
-                  className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-indigo-300 text-xs font-mono outline-none transition-all h-24 resize-none" 
-                  value={editFormData.file_url || ''} 
-                  onChange={(e) => setEditFormData({...editFormData, file_url: e.target.value})}
-                />
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">URL de Video</label>
+                <input type="text" className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={editFormData.file_url} onChange={(e)=>setEditFormData({...editFormData, file_url: e.target.value})} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Orden</label>
-                  <input 
-                    type="number" 
-                    className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" 
-                    value={editFormData.order || 0} 
-                    onChange={(e) => setEditFormData({...editFormData, order: parseInt(e.target.value)})}
-                  />
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Orden</label>
+                  <input type="number" className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={editFormData.order} onChange={(e)=>setEditFormData({...editFormData, order: parseInt(e.target.value)})} />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Duración</label>
-                  <input 
-                    type="text" 
-                    className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" 
-                    value={editFormData.runtime || ''} 
-                    onChange={(e) => setEditFormData({...editFormData, runtime: e.target.value})}
-                  />
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Duración</label>
+                  <input type="text" className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={editFormData.runtime} onChange={(e)=>setEditFormData({...editFormData, runtime: e.target.value})} />
                 </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Descripción</label>
-                <textarea 
-                  className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all h-32 resize-none" 
-                  value={editFormData.description || ''} 
-                  onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
-                />
               </div>
             </div>
             <div className="p-8 bg-gray-950/50 flex justify-end gap-4 border-t border-gray-800">
-              <button onClick={() => setShowEditModal(false)} className="text-gray-500 hover:text-white font-bold transition-colors">Cancelar</button>
-              <button 
-                onClick={handleUpdate} 
-                disabled={isSaving}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-600/20 disabled:opacity-50 flex items-center gap-2"
-              >
-                {isSaving ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-save"></i>}
+              <button onClick={() => setShowEditModal(false)} className="text-gray-500 font-bold">Cancelar</button>
+              <button onClick={handleUpdate} disabled={isSaving} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase transition-all shadow-xl">
                 {isSaving ? 'Guardando...' : 'Actualizar'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkUrlModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl animate-scaleIn">
+            <div className="p-8 border-b border-gray-800 bg-gray-950/50">
+              <h4 className="text-xl font-black text-white uppercase tracking-tighter">Procesar Lote de URLs</h4>
+            </div>
+            <div className="p-8 space-y-5">
+               <div className="grid grid-cols-2 gap-4">
+                  <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={bulkUrlParams.series_id} onChange={(e)=>setBulkUrlParams({...bulkUrlParams, series_id: parseInt(e.target.value)})}>
+                    <option value={0}>Elegir serie...</option>
+                    {tvShows.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                  </select>
+                  <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={bulkUrlParams.season_id} onChange={(e)=>setBulkUrlParams({...bulkUrlParams, season_id: parseInt(e.target.value)})}>
+                    <option value={0}>Elegir temporada...</option>
+                    {seasons.filter(s => {
+                      const tvShowIdStr = String(s.tv_show_id || '');
+                      return tvShowIdStr.includes(`"${bulkUrlParams.series_id}"`) || tvShowIdStr.includes(`${bulkUrlParams.series_id}`);
+                    }).map(s => <option key={s.id} value={s.id}>{s.season_name}</option>)}
+                  </select>
+               </div>
+               <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={bulkUrlParams.startEpisodeId} onChange={(e)=>setBulkUrlParams({...bulkUrlParams, startEpisodeId: parseInt(e.target.value)})}>
+                    <option value={0}>Empezar desde el episodio...</option>
+                    {episodes.filter(ep => Number(ep.season_id) === bulkUrlParams.season_id).sort((a,b)=>a.order-b.order).map(ep => (
+                      <option key={ep.id} value={ep.id}>#{ep.order} - {ep.episode_name}</option>
+                    ))}
+               </select>
+               <textarea 
+                  className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-xs font-mono outline-none transition-all h-40 resize-none"
+                  placeholder="Pega las URLs una por línea..."
+                  value={bulkUrlParams.urls}
+                  onChange={(e)=>setBulkUrlParams({...bulkUrlParams, urls: e.target.value})}
+               ></textarea>
+            </div>
+            <div className="p-8 bg-gray-950/50 flex justify-end gap-4 border-t border-gray-800">
+              <button onClick={() => setShowBulkUrlModal(false)} className="text-gray-500 font-bold">Cerrar</button>
+              <button onClick={handleProcessBulkUrls} disabled={isProcessingBulkUrls} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase shadow-xl">
+                {isProcessingBulkUrls ? 'Procesando...' : 'Aplicar URLs'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteId && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[70]">
+          <div className="bg-gray-900 p-8 rounded-3xl border border-gray-800 max-w-xs text-center">
+            <h4 className="text-lg font-bold text-white mb-4">¿Eliminar episodio?</h4>
+            <div className="flex gap-4">
+              <button onClick={() => setDeleteId(null)} className="flex-1 text-gray-400 font-bold">No</button>
+              <button onClick={async () => {
+                await fetch(`${API_BASE_URL}/episodes/${deleteId}`, { method: 'DELETE' });
+                refreshData();
+                setDeleteId(null);
+              }} className="flex-1 bg-red-600 text-white py-2 rounded-xl font-bold">Sí</button>
             </div>
           </div>
         </div>

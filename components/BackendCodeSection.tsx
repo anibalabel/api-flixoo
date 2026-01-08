@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 
 const BackendCodeSection: React.FC = () => {
@@ -7,8 +6,8 @@ const BackendCodeSection: React.FC = () => {
 
   const phpCode = `<?php
 /**
- * REST API OXOOFLIX - Archivo: api.php
- * Versión Final Corregida para Registro y Actualización
+ * REST API OXOOFLIX - plusmpzj_oxooflix
+ * Generado con soporte para timestamps y formato JSON en IDs
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -20,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     exit;
 }
 
-// Configuración de Base de Datos
+// Configuración de Base de Datos - Según requerimientos del usuario
 $db_host = "localhost";
 $db_port = 3306;
 $db_database = "plusmpzj_oxooflix";
@@ -37,49 +36,71 @@ try {
     exit;
 }
 
-// Enrutador
-$path_info = isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : '';
-if (empty($path_info)) {
-    $script_name = $_SERVER['SCRIPT_NAME'];
-    $request_uri = $_SERVER['REQUEST_URI'];
-    $path_info = str_replace($script_name, '', $request_uri);
-    $path_info = explode('?', $path_info)[0];
+// Helper para procesar la ruta
+$path_info = isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : (isset($_SERVER['REQUEST_URI']) ? explode('?', $_SERVER['REQUEST_URI'])[0] : '');
+$request = explode('/', trim($path_info, '/'));
+// En algunos servidores el primer elemento puede ser el nombre del script si no hay rewrite
+if (isset($request[0]) && strpos($request[0], '.php') !== false) {
+    array_shift($request);
 }
 
-$request = explode('/', trim($path_info, '/'));
 $resource = isset($request[0]) ? $request[0] : '';
 $id = isset($request[1]) ? $request[1] : null;
 $method = $_SERVER['REQUEST_METHOD'];
 
 // Formato de fecha solicitado: 2026-01-08 16:41:59
-date_default_timezone_set('America/Mexico_City'); 
+date_default_timezone_set('UTC'); 
+$now = date('Y-m-d H:i:s');
 
 // --- RUTAS ---
 
-// 1. TV SHOWS
+// 1. TV SHOWS (Obtener: id, title, tmdb_id, thumbnail)
 if ($resource == 'tv_shows') {
     if ($method == 'GET') {
-        $stmt = $pdo->query("SELECT id, title, tmdb_id FROM tv_shows ORDER BY id DESC");
+        $stmt = $pdo->query("SELECT id, title, tmdb_id, thumbnail FROM tv_shows ORDER BY id DESC");
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+    elseif ($method == 'POST') {
+        $data = json_decode(file_get_contents('php://input'), true);
+        $sql = "INSERT INTO tv_shows (title, tmdb_id, thumbnail) VALUES (?, ?, ?)";
+        $pdo->prepare($sql)->execute([$data['title'], $data['tmdb_id'], $data['thumbnail']]);
+        echo json_encode(["status" => "success", "id" => $pdo->lastInsertId()]);
+    }
+    elseif ($method == 'PUT' && $id) {
+        $data = json_decode(file_get_contents('php://input'), true);
+        $sql = "UPDATE tv_shows SET title=?, tmdb_id=?, thumbnail=? WHERE id=?";
+        $pdo->prepare($sql)->execute([$data['title'], $data['tmdb_id'], $data['thumbnail'], $id]);
+        echo json_encode(["status" => "success"]);
+    }
+    elseif ($method == 'DELETE' && $id) {
+        $pdo->prepare("DELETE FROM tv_shows WHERE id = ?")->execute([$id]);
+        echo json_encode(["status" => "success"]);
     }
 }
 
-// 2. SEASONS
+// 2. SEASONS (Obtener: id, tv_show_id, slug, season_name, order, status)
 elseif ($resource == 'seasons') {
     if ($method == 'GET') {
-        $stmt = $pdo->query("SELECT id, tv_show_id, slug, season_name, \`order\`, status FROM seasons ORDER BY \`order\` ASC");
+        $stmt = $pdo->query("SELECT id, tv_show_id, slug, season_name, \`order\`, status FROM seasons ORDER BY id DESC");
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
     } 
     elseif ($method == 'POST') {
         $data = json_decode(file_get_contents('php://input'), true);
         
-        // Formato ["1"] solicitado, evitando duplicar si ya viene así
+        // Requisito especial: tv_show_id guardado como ["1"]
         $raw_id = (string)$data['tv_show_id'];
-        $tv_show_id = strpos($raw_id, '[') === false ? '["' . $raw_id . '"]' : $raw_id;
+        $tv_show_id = '["' . $raw_id . '"]';
         
-        $ts = date('Y-m-d H:i:s');
         $sql = "INSERT INTO seasons (tv_show_id, slug, season_name, \`order\`, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        $pdo->prepare($sql)->execute([$tv_show_id, $data['slug'], $data['season_name'], $data['order'], (int)$data['status'], $ts, $ts]);
+        $pdo->prepare($sql)->execute([
+            $tv_show_id, 
+            $data['slug'], 
+            $data['season_name'], 
+            $data['order'], 
+            (int)$data['status'], 
+            $now, 
+            $now
+        ]);
         echo json_encode(["status" => "success", "id" => $pdo->lastInsertId()]);
     }
     elseif ($method == 'PUT' && $id) {
@@ -88,9 +109,16 @@ elseif ($resource == 'seasons') {
         $raw_id = (string)$data['tv_show_id'];
         $tv_show_id = strpos($raw_id, '[') === false ? '["' . $raw_id . '"]' : $raw_id;
         
-        $ts = date('Y-m-d H:i:s');
         $sql = "UPDATE seasons SET tv_show_id=?, slug=?, season_name=?, \`order\`=?, status=?, updated_at=? WHERE id=?";
-        $pdo->prepare($sql)->execute([$tv_show_id, $data['slug'], $data['season_name'], $data['order'], (int)$data['status'], $ts, $id]);
+        $pdo->prepare($sql)->execute([
+            $tv_show_id, 
+            $data['slug'], 
+            $data['season_name'], 
+            $data['order'], 
+            (int)$data['status'], 
+            $now, 
+            $id
+        ]);
         echo json_encode(["status" => "success"]);
     }
     elseif ($method == 'DELETE' && $id) {
@@ -99,24 +127,52 @@ elseif ($resource == 'seasons') {
     }
 }
 
-// 3. EPISODES
+// 3. EPISODES (Obtener: todos los campos solicitados)
 elseif ($resource == 'episodes') {
     if ($method == 'GET') {
-        $stmt = $pdo->query("SELECT id, season_id, series_id, episode_name, slug, description, file_source, source_type, file_url, \`order\`, runtime, poster, total_view FROM episodes ORDER BY \`order\` ASC");
+        $stmt = $pdo->query("SELECT id, season_id, series_id, episode_name, slug, description, file_source, source_type, file_url, \`order\`, runtime, poster, total_view FROM episodes ORDER BY id DESC");
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
     }
     elseif ($method == 'POST') {
         $d = json_decode(file_get_contents('php://input'), true);
-        $ts = date('Y-m-d H:i:s');
         $sql = "INSERT INTO episodes (season_id, series_id, episode_name, slug, description, file_source, source_type, file_url, \`order\`, runtime, poster, total_view, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        $pdo->prepare($sql)->execute([$d['season_id'], $d['series_id'], $d['episode_name'], $d['slug'], $d['description'], $d['file_source'], $d['source_type'], $d['file_url'], $d['order'], $d['runtime'], $d['poster'], 0, $ts, $ts]);
-        echo json_encode(["status" => "success"]);
+        $pdo->prepare($sql)->execute([
+            $d['season_id'], 
+            $d['series_id'], 
+            $d['episode_name'], 
+            $d['slug'], 
+            $d['description'], 
+            $d['file_source'], 
+            $d['source_type'], 
+            $d['file_url'], 
+            $d['order'], 
+            $d['runtime'], 
+            $d['poster'], 
+            0, 
+            $now, 
+            $now
+        ]);
+        echo json_encode(["status" => "success", "id" => $pdo->lastInsertId()]);
     }
     elseif ($method == 'PUT' && $id) {
         $d = json_decode(file_get_contents('php://input'), true);
-        $ts = date('Y-m-d H:i:s');
         $sql = "UPDATE episodes SET season_id=?, series_id=?, episode_name=?, slug=?, description=?, file_source=?, source_type=?, file_url=?, \`order\`=?, runtime=?, poster=?, total_view=?, updated_at=? WHERE id=?";
-        $pdo->prepare($sql)->execute([$d['season_id'], $d['series_id'], $d['episode_name'], $d['slug'], $d['description'], $d['file_source'], $d['source_type'], $d['file_url'], $d['order'], $d['runtime'], $d['poster'], $d['total_view'], $ts, $id]);
+        $pdo->prepare($sql)->execute([
+            $d['season_id'], 
+            $d['series_id'], 
+            $d['episode_name'], 
+            $d['slug'], 
+            $d['description'], 
+            $d['file_source'], 
+            $d['source_type'], 
+            $d['file_url'], 
+            $d['order'], 
+            $d['runtime'], 
+            $d['poster'], 
+            $d['total_view'], 
+            $now, 
+            $id
+        ]);
         echo json_encode(["status" => "success"]);
     }
     elseif ($method == 'DELETE' && $id) {
@@ -125,7 +181,7 @@ elseif ($resource == 'episodes') {
     }
 } else {
     http_response_code(404);
-    echo json_encode(["error" => "Ruta no encontrada"]);
+    echo json_encode(["error" => "Ruta no válida"]);
 }
 ?>`;
 
@@ -139,31 +195,36 @@ elseif ($resource == 'episodes') {
     <div className="bg-gray-900 rounded-2xl border border-gray-800 shadow-2xl overflow-hidden animate-fadeIn">
       <div className="p-6 border-b border-gray-800 bg-gray-900/80 sticky top-0 z-10 flex justify-between items-center">
         <div>
-           <h3 className="text-xl font-bold text-white">API Implementación</h3>
-           <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest mt-1">MySQL + PDO + REST</p>
+           <h3 className="text-xl font-bold text-white">Documentación API Rest</h3>
+           <p className="text-[10px] text-indigo-400 uppercase font-black tracking-widest mt-1">Implementación MySQL PDO</p>
         </div>
         <div className="flex gap-2">
           <button 
-            onClick={() => setActiveTab('PHP')}
-            className={`px-4 py-2 rounded-lg font-semibold transition-all ${activeTab === 'PHP' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
-          >
-            PHP API Code
-          </button>
-          <button 
             onClick={handleCopy}
-            className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2 ${copied ? 'bg-green-600 text-white' : 'bg-gray-800 text-indigo-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2 ${copied ? 'bg-green-600 text-white' : 'bg-gray-800 text-indigo-400 hover:text-white border border-gray-700'}`}
           >
             <i className={`fas ${copied ? 'fa-check' : 'fa-copy'}`}></i>
-            {copied ? '¡Copiado!' : 'Copiar Código'}
+            {copied ? '¡Copiado!' : 'Copiar Código PHP'}
           </button>
         </div>
       </div>
 
       <div className="p-6">
-        <div className="bg-black/40 p-4 rounded-xl border border-gray-800 overflow-x-auto max-h-[600px] scrollbar-thin">
+        <div className="bg-black/60 p-6 rounded-2xl border border-gray-800 overflow-x-auto max-h-[600px] custom-scrollbar">
           <pre className="text-xs text-indigo-300 font-mono leading-relaxed">
             <code>{phpCode}</code>
           </pre>
+        </div>
+        
+        <div className="mt-6 p-6 bg-indigo-900/10 border border-indigo-500/20 rounded-2xl">
+           <h4 className="text-indigo-400 font-bold mb-2 flex items-center gap-2">
+             <i className="fas fa-info-circle"></i> Notas de Implementación
+           </h4>
+           <ul className="text-xs text-gray-400 space-y-2 list-disc pl-4">
+             <li>El campo <b>tv_show_id</b> en la tabla <i>seasons</i> se guarda como un array JSON (Ej: <code className="text-indigo-300">["1"]</code>) según su solicitud.</li>
+             <li>Los campos <b>created_at</b> y <b>updated_at</b> utilizan el formato de marca de tiempo completo.</li>
+             <li>Asegúrese de subir el archivo <code className="text-white">api.php</code> a su servidor <code className="text-white">apiflixy.plusmovie.pw</code>.</li>
+           </ul>
         </div>
       </div>
     </div>
