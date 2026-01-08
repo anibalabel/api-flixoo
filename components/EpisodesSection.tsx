@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Episode, Season, TVShow } from '../types';
 
@@ -36,7 +35,6 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
   
   // --- Configuración TMDB ---
   const [tmdbToken, setTmdbToken] = useState(localStorage.getItem('tmdb_token') || DEFAULT_TMDB_TOKEN);
-  const [showTokenSettings, setShowTokenSettings] = useState(false);
   
   // --- Estados de Importación TMDB ---
   const [fetchedEpisodes, setFetchedEpisodes] = useState<FetchedEpisode[]>([]);
@@ -232,8 +230,15 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
     } catch (error) { console.error(error); }
   };
 
+  // Filtrado robusto de temporadas según la serie seleccionada
+  const filteredSeasons = seasons.filter(s => {
+    if (!searchParams.series_id) return false;
+    const tvShowIdStr = String(s.tv_show_id || '');
+    return tvShowIdStr.includes(`"${searchParams.series_id}"`) || tvShowIdStr.includes(`${searchParams.series_id}`);
+  });
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fadeIn">
       <div className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden shadow-2xl">
         <div className="p-6 border-b border-gray-800 flex justify-between items-center bg-gray-900/50">
           <h3 className="text-xl font-bold text-white flex items-center gap-3">
@@ -273,8 +278,8 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
-                      <button onClick={() => { setEditFormData(ep); setShowEditModal(true); }} className="text-gray-400 hover:text-indigo-400 p-2"><i className="fas fa-edit"></i></button>
-                      <button onClick={() => setDeleteId(ep.id)} className="text-gray-400 hover:text-red-400 p-2"><i className="fas fa-trash"></i></button>
+                      <button onClick={() => { setEditFormData(ep); setShowEditModal(true); }} className="text-gray-400 hover:text-indigo-400 p-2 transition-colors"><i className="fas fa-edit"></i></button>
+                      <button onClick={() => setDeleteId(ep.id)} className="text-gray-400 hover:text-red-400 p-2 transition-colors"><i className="fas fa-trash"></i></button>
                     </div>
                   </td>
                 </tr>
@@ -289,61 +294,77 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         </div>
       </div>
 
-      {/* MODAL IMPORTAR TMDB (El que no hacía nada) */}
+      {/* MODAL IMPORTAR TMDB */}
       {showImportModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+          <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-scaleIn">
             <div className="p-8 border-b border-gray-800 flex justify-between items-center bg-gray-950/50">
               <h4 className="text-2xl font-black text-white uppercase tracking-tighter">Buscador TMDB</h4>
-              <button onClick={() => setShowImportModal(false)} className="text-gray-500 hover:text-white"><i className="fas fa-times text-xl"></i></button>
+              <button onClick={() => setShowImportModal(false)} className="w-10 h-10 rounded-full bg-gray-800 text-gray-400 hover:text-white hover:bg-red-600 transition-all flex items-center justify-center">
+                <i className="fas fa-times text-xl"></i>
+              </button>
             </div>
             
-            <div className="p-8 space-y-6 overflow-y-auto">
+            <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <select className="bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm" value={searchParams.series_id} onChange={(e)=>setSearchParams({...searchParams, series_id: parseInt(e.target.value)})}>
-                  <option value={0}>Selecciona serie...</option>
-                  {tvShows.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-                </select>
-                <select className="bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm" value={searchParams.season_id} onChange={(e)=>setSearchParams({...searchParams, season_id: parseInt(e.target.value)})}>
-                  <option value={0}>Selecciona temporada...</option>
-                  {seasons.filter(s => s.tv_show_id.includes(`"${searchParams.series_id}"`)).map(s => <option key={s.id} value={s.id}>{s.season_name}</option>)}
-                </select>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">1. Serie Destino</label>
+                  <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={searchParams.series_id} onChange={(e)=>setSearchParams({...searchParams, series_id: parseInt(e.target.value)})}>
+                    <option value={0}>Selecciona serie...</option>
+                    {tvShows.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">2. Temporada Destino</label>
+                  <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={searchParams.season_id} onChange={(e)=>setSearchParams({...searchParams, season_id: parseInt(e.target.value)})}>
+                    <option value={0}>Selecciona temporada...</option>
+                    {filteredSeasons.map(s => <option key={s.id} value={s.id}>{s.season_name}</option>)}
+                  </select>
+                </div>
               </div>
               
-              <button onClick={handleSearchEpisodes} disabled={isSearching} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl">
-                {isSearching ? <i className="fas fa-spinner animate-spin mr-2"></i> : <i className="fas fa-search mr-2"></i>}
-                BUSCAR EPISODIOS
+              <button onClick={handleSearchEpisodes} disabled={isSearching || !searchParams.season_id} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-indigo-600/20 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                {isSearching ? <i className="fas fa-circle-notch animate-spin"></i> : <i className="fas fa-search"></i>}
+                OBTENER EPISODIOS DE TMDB
               </button>
 
               <div className="grid grid-cols-1 gap-3">
-                {fetchedEpisodes.map(fe => {
-                  const isRegistered = episodes.some(e => Number(e.season_id) === searchParams.season_id && e.order === fe.episode_number);
-                  const isSelected = selectedNumbers.includes(fe.episode_number);
-                  return (
-                    <div key={fe.episode_number} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${isRegistered ? 'bg-green-900/10 border-green-500/20' : 'bg-gray-800/50 border-gray-700'}`}>
-                       <div className="w-10 text-indigo-400 font-black">#{fe.episode_number}</div>
-                       <div className="flex-1">
-                         <div className="text-white font-bold text-sm">{fe.name}</div>
-                         <div className="text-xs text-gray-500 line-clamp-1">{fe.overview}</div>
-                       </div>
-                       {isRegistered ? (
-                         <span className="text-green-500 text-[10px] font-black uppercase"><i className="fas fa-check-circle mr-1"></i>Registrado</span>
-                       ) : (
-                         <button 
-                           onClick={() => setSelectedNumbers(prev => isSelected ? prev.filter(n=>n!==fe.episode_number) : [...prev, fe.episode_number])}
-                           className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${isSelected ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-400'}`}
-                         >
-                           {isSelected ? 'Seleccionado' : 'Seleccionar'}
-                         </button>
-                       )}
-                    </div>
-                  );
-                })}
+                {fetchedEpisodes.length > 0 ? (
+                  fetchedEpisodes.map(fe => {
+                    const isRegistered = episodes.some(e => Number(e.season_id) === searchParams.season_id && e.order === fe.episode_number);
+                    const isSelected = selectedNumbers.includes(fe.episode_number);
+                    return (
+                      <div key={fe.episode_number} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${isRegistered ? 'bg-green-900/10 border-green-500/20 opacity-80' : 'bg-gray-800/50 border-gray-700 hover:border-indigo-500/50'}`}>
+                         <div className="w-10 text-indigo-400 font-black">#{fe.episode_number}</div>
+                         <div className="flex-1 min-w-0">
+                           <div className="text-white font-bold text-sm truncate">{fe.name}</div>
+                           <div className="text-xs text-gray-500 line-clamp-1">{fe.overview || 'Sin descripción disponible.'}</div>
+                         </div>
+                         {isRegistered ? (
+                           <span className="text-green-500 text-[10px] font-black uppercase whitespace-nowrap"><i className="fas fa-check-circle mr-1"></i>Registrado</span>
+                         ) : (
+                           <button 
+                             onClick={() => setSelectedNumbers(prev => isSelected ? prev.filter(n=>n!==fe.episode_number) : [...prev, fe.episode_number])}
+                             className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all whitespace-nowrap ${isSelected ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-700 text-gray-400 hover:text-white'}`}
+                           >
+                             {isSelected ? 'Seleccionado' : 'Seleccionar'}
+                           </button>
+                         )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  !isSearching && searchParams.season_id !== 0 && (
+                    <div className="text-center py-10 text-gray-500 italic">Haz clic en buscar para listar episodios.</div>
+                  )
+                )}
               </div>
             </div>
             
             <div className="p-8 bg-gray-950/50 flex justify-end gap-4 border-t border-gray-800">
-               <button onClick={handleBulkRegister} disabled={isBulkRegistering || selectedNumbers.length === 0} className="bg-green-600 hover:bg-green-500 text-white px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-20">
+               <button onClick={() => setShowImportModal(false)} className="text-gray-500 hover:text-white font-bold px-4">Cerrar</button>
+               <button onClick={handleBulkRegister} disabled={isBulkRegistering || selectedNumbers.length === 0} className="bg-green-600 hover:bg-green-500 text-white px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-20 flex items-center gap-2 transition-all">
+                 {isBulkRegistering ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-plus"></i>}
                  {isBulkRegistering ? 'Procesando...' : `Registrar ${selectedNumbers.length} Seleccionados`}
                </button>
             </div>
@@ -388,7 +409,10 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                   >
                     <option value={0}>Selecciona temporada...</option>
                     {seasons
-                      .filter(s => s.tv_show_id && s.tv_show_id.includes(`"${bulkUrlParams.series_id}"`))
+                      .filter(s => {
+                        const showIdStr = String(s.tv_show_id || '');
+                        return showIdStr.includes(`"${bulkUrlParams.series_id}"`) || showIdStr.includes(`${bulkUrlParams.series_id}`);
+                      })
                       .map(s => <option key={s.id} value={s.id}>{s.season_name}</option>)}
                   </select>
                 </div>
@@ -413,7 +437,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">4. Lote de URLs (Una por línea)</label>
                 <textarea 
-                  className="w-full h-40 bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 py-4 text-indigo-300 text-xs font-mono outline-none transition-all resize-none shadow-inner"
+                  className="w-full h-40 bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-2xl px-5 py-4 text-indigo-300 text-xs font-mono outline-none transition-all resize-none shadow-inner custom-scrollbar"
                   placeholder="Pega las URLs aquí..."
                   value={bulkUrlParams.urls}
                   onChange={(e) => setBulkUrlParams({...bulkUrlParams, urls: e.target.value})}
