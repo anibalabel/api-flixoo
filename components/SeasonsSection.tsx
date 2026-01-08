@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Season, TVShow } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -19,6 +19,8 @@ interface FetchedSeason {
   poster_path?: string;
 }
 
+type LanguageType = 'LAT' | 'CAST' | 'SUB';
+
 const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSeasons, refreshData }) => {
   const [showModal, setShowModal] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -28,12 +30,25 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
   const [isSaving, setIsSaving] = useState(false);
   const [fetchedSeasons, setFetchedSeasons] = useState<FetchedSeason[]>([]);
   
+  const [language, setLanguage] = useState<LanguageType>('LAT');
   const [formData, setFormData] = useState<Partial<Season>>({
     season_name: '',
     tv_show_id: '',
     order: 1,
     status: 1
   });
+
+  // Efecto para auto-generar el nombre siguiendo la fórmula: S+orde : idioma : mobre de la serie
+  useEffect(() => {
+    if (!isEditing && formData.tv_show_id && formData.order !== undefined) {
+      const selectedShow = tvShows.find(s => s.id.toString() === formData.tv_show_id.toString());
+      if (selectedShow) {
+        const paddedOrder = formData.order.toString().padStart(2, '0');
+        const autoName = `S${paddedOrder} : ${language} : ${selectedShow.title}`;
+        setFormData(prev => ({ ...prev, season_name: autoName }));
+      }
+    }
+  }, [formData.tv_show_id, formData.order, language, tvShows, isEditing]);
 
   const generateSlug = (name: string) => {
     return name.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
@@ -144,6 +159,7 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
     setCurrentSeasonId(null);
     setFormData({ season_name: '', tv_show_id: '', order: 1, status: 1 });
     setFetchedSeasons([]);
+    setLanguage('LAT');
   };
 
   const executeDelete = async () => {
@@ -222,7 +238,6 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
         </div>
       </div>
 
-      {/* MODAL ELIMINAR (Sustituye a confirm) */}
       {deleteId && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
           <div className="bg-gray-900 border border-red-900/30 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl">
@@ -247,7 +262,7 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
             <div className="p-8 border-b border-gray-800">
               <h4 className="text-2xl font-black text-white tracking-tighter uppercase">{isEditing ? 'Editar Temporada' : 'Crear Temporada'}</h4>
             </div>
-            <div className="p-8 space-y-6">
+            <div className="p-8 space-y-5">
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Serie</label>
                 <div className="flex gap-2">
@@ -263,9 +278,35 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
                 </div>
               </div>
 
+              {/* Selector de Idioma */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Idioma</label>
+                <div className="flex gap-2 p-1 bg-gray-800 rounded-xl border border-gray-700">
+                  {(['LAT', 'CAST', 'SUB'] as LanguageType[]).map((lang) => (
+                    <button
+                      key={lang}
+                      onClick={() => setLanguage(lang)}
+                      className={`flex-1 py-2 text-xs font-black rounded-lg transition-all ${
+                        language === lang 
+                        ? 'bg-indigo-600 text-white shadow-lg' 
+                        : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                      }`}
+                    >
+                      {lang === 'LAT' ? 'LATINO' : lang === 'CAST' ? 'CASTELLANO' : 'SUBTITULADO'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Nombre</label>
-                <input type="text" className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={formData.season_name} onChange={(e) => setFormData({...formData, season_name: e.target.value})} />
+                <input 
+                  type="text" 
+                  placeholder="Ej: S01 : LAT : Wednesday"
+                  className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" 
+                  value={formData.season_name} 
+                  onChange={(e) => setFormData({...formData, season_name: e.target.value})} 
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

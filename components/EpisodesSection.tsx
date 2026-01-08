@@ -30,6 +30,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isBulkRegistering, setIsBulkRegistering] = useState(false);
   
   // --- Configuración TMDB ---
   const [tmdbToken, setTmdbToken] = useState(localStorage.getItem('tmdb_token') || DEFAULT_TMDB_TOKEN);
@@ -37,6 +38,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
   
   // --- Estados de Importación ---
   const [fetchedEpisodes, setFetchedEpisodes] = useState<FetchedEpisode[]>([]);
+  const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
   const [registeringIds, setRegisteringIds] = useState<number[]>([]);
   const [searchParams, setSearchParams] = useState({ series_id: 0, season_id: 0 });
   
@@ -74,6 +76,21 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       : path;
   };
 
+  // --- LÓGICA DE SELECCIÓN ---
+  const toggleSelectEpisode = (num: number) => {
+    setSelectedNumbers(prev => 
+      prev.includes(num) ? prev.filter(n => n !== num) : [...prev, num]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedNumbers.length === fetchedEpisodes.length) {
+      setSelectedNumbers([]);
+    } else {
+      setSelectedNumbers(fetchedEpisodes.map(fe => fe.episode_number));
+    }
+  };
+
   // --- LÓGICA DE IMPORTACIÓN TMDB ---
   const handleSearchEpisodes = async () => {
     if (!searchParams.series_id || !searchParams.season_id) {
@@ -91,6 +108,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
 
     setIsSearching(true);
     setFetchedEpisodes([]);
+    setSelectedNumbers([]);
 
     try {
       const tmdbId = selectedShow.tmdb_id;
@@ -101,7 +119,6 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         throw new Error("La serie seleccionada no tiene un TMDB ID válido configurado.");
       }
 
-      // 1. Intentamos con el token Bearer (v4)
       const url = `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNum}?language=es-ES`;
       
       let response = await fetch(url, {
@@ -111,19 +128,17 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         }
       });
 
-      // 2. Si falla con 401, intentamos con el token como API Key (v3) como respaldo
       if (response.status === 401) {
-        console.warn("Token v4 falló o es inválido, probando con API Key v3...");
         const fallbackUrl = `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNum}?api_key=${cleanToken}&language=es-ES`;
         response = await fetch(fallbackUrl);
       }
 
       if (response.status === 401) {
-        throw new Error("ERROR 401: El Token/API Key de TMDB no es válido. Revisa que no haya espacios en blanco.");
+        throw new Error("ERROR 401: El Token/API Key de TMDB no es válido.");
       }
 
       if (!response.ok) {
-        throw new Error(`Error TMDB (${response.status}): No se pudo obtener la información.`);
+        throw new Error(`Error TMDB (${response.status})`);
       }
 
       const data = await response.json();
@@ -135,11 +150,8 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
           runtime: ep.runtime || 0,
           still_path: ep.still_path || ""
         })));
-      } else {
-        alert("TMDB no devolvió episodios para esta temporada.");
       }
     } catch (error: any) {
-      console.error("Detalle del error:", error);
       alert(error.message);
       if (error.message.includes("401")) setShowTokenSettings(true);
     } finally {
@@ -176,15 +188,31 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       });
       if (res.ok) {
         refreshData();
-      } else {
-        const errorData = await res.json();
-        alert(`Error: ${errorData.error || 'No se pudo guardar'}`);
+        return true;
       }
     } catch (error) { 
       console.error(error); 
     } finally { 
       setRegisteringIds(prev => prev.filter(id => id !== fe.episode_number)); 
     }
+    return false;
+  };
+
+  const handleBulkImport = async () => {
+    if (selectedNumbers.length === 0) return;
+    setIsBulkRegistering(true);
+    
+    const toImport = fetchedEpisodes.filter(fe => selectedNumbers.includes(fe.episode_number));
+    let successCount = 0;
+
+    for (const ep of toImport) {
+      const success = await registerFetchedEpisode(ep);
+      if (success) successCount++;
+    }
+
+    setIsBulkRegistering(false);
+    setSelectedNumbers([]);
+    alert(`Importación finalizada: ${successCount} episodios registrados.`);
   };
 
   const handleUpdate = async () => {
@@ -199,8 +227,6 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       if (res.ok) {
         refreshData();
         setShowEditModal(false);
-      } else {
-        alert("No se pudo actualizar el episodio.");
       }
     } catch (error) { console.error(error); }
     finally { setIsSaving(false); }
@@ -216,13 +242,8 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       if (res.ok) {
         refreshData();
         setDeleteId(null);
-      } else {
-        alert("No se pudo eliminar el episodio.");
       }
-    } catch (error) { 
-      console.error(error); 
-      alert("Error de conexión.");
-    }
+    } catch (error) { console.error(error); }
   };
 
   return (
@@ -280,7 +301,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       {/* MODAL ELIMINAR */}
       {deleteId && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-gray-900 border border-red-900/30 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl">
+          <div className="bg-gray-900 border border-red-900/30 rounded-3xl w-full max-sm overflow-hidden shadow-2xl">
             <div className="p-8 text-center">
               <div className="w-16 h-16 bg-red-900/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/30">
                 <i className="fas fa-exclamation-triangle text-2xl"></i>
@@ -300,14 +321,13 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       {showImportModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-xl flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-[2rem] w-full max-w-6xl h-[85vh] overflow-hidden shadow-2xl flex">
-            {/* Sidebar de Configuración e Importación */}
+            {/* Sidebar */}
             <div className="w-80 border-r border-gray-800 p-8 flex flex-col bg-gray-950/80">
               <div className="flex justify-between items-center mb-8">
                 <h4 className="text-xl font-black text-white uppercase tracking-tighter">Importador</h4>
                 <button 
                   onClick={() => setShowTokenSettings(!showTokenSettings)} 
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-lg ${showTokenSettings ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
-                  title="Configuración de Token"
                 >
                   <i className="fas fa-cog"></i>
                 </button>
@@ -316,24 +336,18 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
               <div className="space-y-6 flex-1">
                 {showTokenSettings ? (
                   <div className="bg-indigo-900/20 border border-indigo-500/30 p-5 rounded-2xl animate-fadeIn">
-                    <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-3 block">TMDB API Token / Key</label>
+                    <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-3 block">TMDB API Token</label>
                     <textarea 
-                      className="w-full bg-gray-900 border border-gray-800 rounded-xl px-3 py-3 text-indigo-300 text-[10px] font-mono outline-none focus:border-indigo-500 h-40 resize-none" 
+                      className="w-full bg-gray-900 border border-gray-800 rounded-xl px-3 py-3 text-indigo-300 text-[10px] font-mono outline-none h-40 resize-none" 
                       value={tmdbToken} 
                       onChange={(e) => setTmdbToken(e.target.value)}
-                      placeholder="Pega tu API Key v3 o Token v4 aquí..."
                     />
-                    <div className="mt-4 p-3 bg-gray-900/50 rounded-lg border border-gray-800">
-                      <p className="text-[9px] text-gray-400 leading-relaxed italic">
-                        Usa el **API Read Access Token (v4)** de TMDB. Si no funciona, intenta pegar tu **API Key (v3)** normal.
-                      </p>
-                    </div>
                   </div>
                 ) : (
                   <>
                     <div className="space-y-4">
                       <div>
-                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block">1. Elegir Serie</label>
+                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block">1. Serie</label>
                         <select 
                           className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" 
                           onChange={(e) => setSearchParams({...searchParams, series_id: parseInt(e.target.value), season_id: 0})} 
@@ -343,9 +357,8 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                           {tvShows.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
                         </select>
                       </div>
-                      
                       <div>
-                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block">2. Elegir Temporada</label>
+                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block">2. Temporada</label>
                         <select 
                           className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" 
                           value={searchParams.season_id} 
@@ -366,55 +379,108 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                     <button 
                       onClick={handleSearchEpisodes} 
                       disabled={isSearching || !searchParams.season_id} 
-                      className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 disabled:text-gray-600 text-white font-black py-4 rounded-xl shadow-xl transition-all flex items-center justify-center gap-3 active:scale-95 border border-indigo-500/30"
+                      className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 disabled:text-gray-600 text-white font-black py-4 rounded-xl shadow-xl transition-all flex items-center justify-center gap-3 active:scale-95"
                     >
                       {isSearching ? <i className="fas fa-sync animate-spin"></i> : <i className="fas fa-bolt"></i>}
-                      {isSearching ? 'CONECTANDO...' : 'CONSULTAR API'}
+                      CONSULTAR API
                     </button>
                   </>
                 )}
               </div>
-              
-              <button onClick={() => { setShowImportModal(false); setFetchedEpisodes([]); setShowTokenSettings(false); }} className="mt-8 text-gray-500 hover:text-white font-bold text-xs uppercase tracking-widest">Cerrar</button>
+              <button onClick={() => { setShowImportModal(false); setFetchedEpisodes([]); setSelectedNumbers([]); }} className="mt-8 text-gray-500 hover:text-white font-bold text-xs uppercase tracking-widest">Cerrar</button>
             </div>
 
-            {/* Panel de Resultados Principal */}
-            <div className="flex-1 overflow-y-auto p-10 bg-gray-900/40 relative">
-              {fetchedEpisodes.length > 0 ? (
-                <div className="grid grid-cols-1 gap-4 animate-fadeIn">
-                  <div className="mb-4 flex justify-between items-center bg-indigo-600/10 p-4 rounded-2xl border border-indigo-500/20">
-                    <span className="text-indigo-400 text-xs font-bold uppercase tracking-widest">Se encontraron {fetchedEpisodes.length} episodios</span>
-                    <span className="text-[10px] text-gray-500">TMDB API Response: 200 OK</span>
+            {/* Main Panel */}
+            <div className="flex-1 overflow-y-auto p-10 bg-gray-900/40 relative flex flex-col">
+              {fetchedEpisodes.length > 0 && (
+                <div className="sticky top-0 z-20 mb-6 flex justify-between items-center bg-gray-800/80 backdrop-blur-md p-5 rounded-2xl border border-gray-700 shadow-xl">
+                  <div className="flex items-center gap-4">
+                    <input 
+                      type="checkbox" 
+                      className="w-5 h-5 rounded border-gray-700 bg-gray-900 text-indigo-600 focus:ring-indigo-500 transition-all cursor-pointer"
+                      checked={selectedNumbers.length === fetchedEpisodes.length && fetchedEpisodes.length > 0}
+                      onChange={toggleSelectAll}
+                    />
+                    <span className="text-white font-bold text-sm uppercase tracking-wider">
+                      {selectedNumbers.length === fetchedEpisodes.length ? 'Deseleccionar Todo' : 'Seleccionar Todo'}
+                    </span>
                   </div>
-                  {fetchedEpisodes.map(fe => (
-                    <div key={fe.episode_number} className="flex items-center gap-6 p-5 rounded-3xl bg-gray-800/40 border border-gray-700/50 hover:border-indigo-500/30 transition-all group shadow-lg">
-                      <div className="relative">
-                        <img src={`https://image.tmdb.org/t/p/w300${fe.still_path}`} className="w-48 h-28 object-cover rounded-2xl border border-gray-700 bg-gray-900" />
-                        <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-lg font-black">#{fe.episode_number}</div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-white font-black text-xl truncate group-hover:text-indigo-400 transition-colors">{fe.name}</div>
-                        <p className="text-[11px] text-gray-500 line-clamp-2 mt-2 leading-relaxed italic">"{fe.overview}"</p>
-                      </div>
-                      <button 
-                        onClick={() => registerFetchedEpisode(fe)} 
-                        disabled={registeringIds.includes(fe.episode_number)} 
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-all shadow-xl shadow-indigo-600/20"
+                  
+                  {selectedNumbers.length > 0 && (
+                    <button 
+                      onClick={handleBulkImport}
+                      disabled={isBulkRegistering}
+                      className="bg-green-600 hover:bg-green-500 text-white px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-xl shadow-green-900/20 active:scale-95 disabled:opacity-50 flex items-center gap-3 transition-all animate-scaleIn"
+                    >
+                      {isBulkRegistering ? <i className="fas fa-sync animate-spin"></i> : <i className="fas fa-cloud-upload-alt"></i>}
+                      {isBulkRegistering ? 'PROCESANDO...' : `IMPORTAR ${selectedNumbers.length} SELECCIONADOS`}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {fetchedEpisodes.length > 0 ? (
+                <div className="grid grid-cols-1 gap-4 animate-fadeIn pb-10">
+                  {fetchedEpisodes.map(fe => {
+                    const isSelected = selectedNumbers.includes(fe.episode_number);
+                    const isRegistering = registeringIds.includes(fe.episode_number);
+                    
+                    return (
+                      <div 
+                        key={fe.episode_number} 
+                        onClick={() => toggleSelectEpisode(fe.episode_number)}
+                        className={`flex items-center gap-6 p-5 rounded-3xl border transition-all group shadow-lg cursor-pointer ${
+                          isSelected 
+                            ? 'bg-indigo-600/10 border-indigo-500/50 ring-1 ring-indigo-500/20 shadow-indigo-500/5' 
+                            : 'bg-gray-800/40 border-gray-700/50 hover:border-gray-600'
+                        }`}
                       >
-                        {registeringIds.includes(fe.episode_number) ? <i className="fas fa-spinner animate-spin mr-2"></i> : <i className="fas fa-plus mr-2"></i>}
-                        {registeringIds.includes(fe.episode_number) ? 'GUARDANDO' : 'IMPORTAR'}
-                      </button>
-                    </div>
-                  ))}
+                        <div className="flex items-center justify-center w-8">
+                          <input 
+                            type="checkbox" 
+                            className="w-5 h-5 rounded border-gray-600 bg-gray-900 text-indigo-600 focus:ring-indigo-500 transition-all cursor-pointer"
+                            checked={isSelected}
+                            readOnly
+                          />
+                        </div>
+                        <div className="relative">
+                          <img src={`https://image.tmdb.org/t/p/w300${fe.still_path}`} className="w-48 h-28 object-cover rounded-2xl border border-gray-700 bg-gray-900" />
+                          <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-lg font-black">#{fe.episode_number}</div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className={`font-black text-xl truncate transition-colors ${isSelected ? 'text-indigo-300' : 'text-white'}`}>{fe.name}</div>
+                          <p className="text-[11px] text-gray-500 line-clamp-2 mt-2 leading-relaxed italic">"{fe.overview}"</p>
+                        </div>
+                        
+                        <div className="flex items-center">
+                          {isRegistering ? (
+                             <div className="bg-gray-800 text-indigo-400 px-6 py-4 rounded-2xl border border-gray-700 flex items-center gap-2">
+                               <i className="fas fa-spinner animate-spin"></i>
+                             </div>
+                          ) : isSelected ? (
+                             <div className="bg-indigo-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg animate-scaleIn">
+                                <i className="fas fa-check"></i>
+                             </div>
+                          ) : (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); registerFetchedEpisode(fe); }}
+                              className="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white w-12 h-12 rounded-2xl border border-gray-700 transition-all flex items-center justify-center"
+                            >
+                              <i className="fas fa-plus"></i>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-4">
+                <div className="flex-1 flex flex-col items-center justify-center text-gray-600 space-y-4">
                   <div className="w-24 h-24 bg-gray-800/50 rounded-full flex items-center justify-center border-2 border-dashed border-gray-700">
                     <i className="fas fa-cloud-download-alt text-4xl"></i>
                   </div>
                   <div className="text-center max-w-sm">
-                    <p className="font-black uppercase tracking-widest text-sm text-gray-400">Listo para importar</p>
-                    <p className="text-xs text-gray-600 mt-2">Selecciona los parámetros a la izquierda. Si experimentas errores de conexión, verifica tu Token de TMDB.</p>
+                    <p className="font-black uppercase tracking-widest text-sm text-gray-400">Selecciona serie y temporada</p>
                   </div>
                 </div>
               )}
@@ -434,7 +500,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                 <input type="text" className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white text-sm border border-transparent focus:border-indigo-500 outline-none transition-all" value={editFormData.episode_name || ''} onChange={(e) => setEditFormData({...editFormData, episode_name: e.target.value})} />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">URL del Video (MP4/HLS)</label>
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">URL del Video</label>
                 <input type="text" className="w-full bg-gray-800 rounded-xl px-4 py-3 text-indigo-300 text-sm font-mono border border-transparent focus:border-indigo-500 outline-none transition-all" value={editFormData.file_url || ''} onChange={(e) => setEditFormData({...editFormData, file_url: e.target.value})} />
               </div>
               <div className="grid grid-cols-2 gap-4">
