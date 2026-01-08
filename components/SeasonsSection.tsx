@@ -44,7 +44,6 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   };
 
-  // Efecto para auto-generar el nombre
   useEffect(() => {
     if (!isEditing && formData.tv_show_id && formData.order !== undefined) {
       const selectedShow = tvShows.find(s => s.id.toString() === formData.tv_show_id.toString());
@@ -104,8 +103,6 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
 
   const toggleStatus = async (season: Season) => {
     const newStatus = Number(season.status) === 1 ? 0 : 1;
-    
-    // Extraer ID puro para el backend
     let showId = "";
     if (season.tv_show_id) {
       const showIdMatch = season.tv_show_id.match(/"(\d+)"/);
@@ -132,13 +129,11 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
   const openEditModal = (season: Season) => {
     setIsEditing(true);
     setCurrentSeasonId(season.id);
-    
     let showId = "";
     if (season.tv_show_id) {
       const showIdMatch = season.tv_show_id.match(/"(\d+)"/);
       showId = showIdMatch ? showIdMatch[1] : season.tv_show_id;
     }
-    
     setFormData({
       season_name: season.season_name || '',
       tv_show_id: showId,
@@ -153,7 +148,6 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
       alert("Completa los campos obligatorios.");
       return;
     }
-
     setIsSaving(true);
     const payload = {
       tv_show_id: formData.tv_show_id, 
@@ -164,17 +158,14 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
       updated_at: getCurrentTimestamp(),
       created_at: isEditing ? undefined : getCurrentTimestamp()
     };
-
     try {
       const url = isEditing ? `${API_BASE_URL}/seasons/${currentSeasonId}` : `${API_BASE_URL}/seasons`;
       const method = isEditing ? 'PUT' : 'POST';
-
       const response = await fetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
       if (response.ok) {
         refreshData();
         closeModal();
@@ -204,7 +195,6 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
         method: 'DELETE',
         headers: { 'Accept': 'application/json' }
       });
-      
       if (res.ok) {
         refreshData();
         setDeleteId(null);
@@ -233,11 +223,11 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
           <table className="w-full text-left">
             <thead className="bg-gray-800/50 text-gray-400 uppercase text-[10px] tracking-widest">
               <tr>
-                <th className="px-6 py-4 font-bold">Serie ID</th>
-                <th className="px-6 py-4 font-bold">Nombre</th>
-                <th className="px-6 py-4 font-bold text-center">Orden</th>
-                <th className="px-6 py-4 font-bold">Estado</th>
-                <th className="px-6 py-4 font-bold text-right">Acciones</th>
+                <th className="px-6 py-4 font-bold">SERIE ID</th>
+                <th className="px-6 py-4 font-bold">NOMBRE</th>
+                <th className="px-6 py-4 font-bold text-center">ORDEN</th>
+                <th className="px-6 py-4 font-bold">ESTADO</th>
+                <th className="px-6 py-4 font-bold text-right">ACCIONES</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
@@ -256,7 +246,7 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
                       <button 
                         onClick={() => toggleStatus(s)}
                         title="Clic para cambiar estado"
-                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border transition-all active:scale-90 ${
+                        className={`px-3 py-1 rounded-md text-[10px] font-black uppercase border transition-all active:scale-90 ${
                         isActive 
                           ? 'bg-green-900/20 text-green-400 border-green-500/30 hover:bg-green-900/40' 
                           : 'bg-red-900/20 text-red-500 border-red-500/30 hover:bg-red-900/40'
@@ -285,7 +275,7 @@ const SeasonsSection: React.FC<SeasonsSectionProps> = ({ seasons, tvShows, setSe
 
       {deleteId && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-gray-900 border border-red-900/30 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl">
+          <div className="bg-gray-900 border border-red-900/30 rounded-3xl w-full max-sm overflow-hidden shadow-2xl">
             <div className="p-8 text-center">
               <div className="w-16 h-16 bg-red-900/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/30">
                 <i className="fas fa-exclamation-triangle text-2xl"></i>

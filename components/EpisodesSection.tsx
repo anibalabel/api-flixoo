@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Episode, Season, TVShow } from '../types';
 
@@ -31,7 +32,6 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
   const [isSearching, setIsSearching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isBulkRegistering, setIsBulkRegistering] = useState(false);
-  const [isUpdatingFromTMDB, setIsUpdatingFromTMDB] = useState(false);
   const [isProcessingBulkUrls, setIsProcessingBulkUrls] = useState(false);
   
   // --- Configuración TMDB ---
@@ -48,10 +48,8 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
   const [bulkUrlParams, setBulkUrlParams] = useState({ series_id: 0, season_id: 0, startEpisodeId: 0, urls: '' });
   const [bulkUrlStatus, setBulkUrlStatus] = useState({ current: 0, total: 0, label: '' });
 
-  // Fix: Added missing state for editing episodes
   const [editFormData, setEditFormData] = useState<Partial<Episode>>({});
 
-  // Reset del episodio de inicio cuando cambia la serie o temporada en el modal de lote
   useEffect(() => {
     setBulkUrlParams(prev => ({ ...prev, startEpisodeId: 0 }));
   }, [bulkUrlParams.series_id, bulkUrlParams.season_id]);
@@ -93,144 +91,77 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   };
 
-  // --- LÓGICA DE LOTE DE URLS ---
   const handleProcessBulkUrls = async () => {
     if (!bulkUrlParams.series_id || !bulkUrlParams.season_id || !bulkUrlParams.startEpisodeId || !bulkUrlParams.urls.trim()) {
       alert("Por favor completa todos los campos del lote.");
       return;
     }
-
     const urlList = bulkUrlParams.urls.split('\n').map(u => u.trim()).filter(u => u !== '');
     if (urlList.length === 0) {
       alert("No se encontraron URLs válidas.");
       return;
     }
-
-    // 1. Obtener y ordenar episodios de la temporada seleccionada
     const seasonEpisodes = episodes
       .filter(ep => Number(ep.season_id) === Number(bulkUrlParams.season_id))
       .sort((a, b) => a.order - b.order);
-
-    // 2. Encontrar el punto de inicio por ID de episodio
     const startIndex = seasonEpisodes.findIndex(ep => Number(ep.id) === Number(bulkUrlParams.startEpisodeId));
-    
     if (startIndex === -1) {
-      alert("No se pudo localizar el episodio de inicio en la base de datos actual. Intenta refrescar los datos.");
+      alert("No se pudo localizar el episodio de inicio.");
       return;
     }
-
-    // 3. Obtener el subconjunto de episodios a partir del inicio
     const targetEpisodes = seasonEpisodes.slice(startIndex);
     const maxItems = Math.min(urlList.length, targetEpisodes.length);
-
     setIsProcessingBulkUrls(true);
-    setBulkUrlStatus({ current: 0, total: maxItems, label: 'Iniciando actualización masiva...' });
-
+    setBulkUrlStatus({ current: 0, total: maxItems, label: 'Actualizando lote...' });
     let count = 0;
     const timestamp = getCurrentTimestamp();
-
     for (let i = 0; i < maxItems; i++) {
       const ep = targetEpisodes[i];
       const url = urlList[i];
-
-      setBulkUrlStatus({ current: i + 1, total: maxItems, label: `Actualizando: Episodio ${ep.order}` });
-
+      setBulkUrlStatus({ current: i + 1, total: maxItems, label: `Actualizando: Ep ${ep.order}` });
       try {
-        const payload = { 
-          ...ep, 
-          file_url: url,
-          file_source: 'embed',
-          source_type: 'embed',
-          updated_at: timestamp
-        };
-
+        const payload = { ...ep, file_url: url, file_source: 'embed', source_type: 'embed', updated_at: timestamp };
         const res = await fetch(`${API_BASE_URL}/episodes/${ep.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        
-        if (res.ok) {
-            count++;
-        }
-      } catch (error) {
-        console.error(`Error en ID ${ep.id}:`, error);
-      }
+        if (res.ok) count++;
+      } catch (error) { console.error(error); }
     }
-
     setIsProcessingBulkUrls(false);
     refreshData();
-    alert(`PROCESO COMPLETADO\n\n- Episodios actualizados: ${count}\n- Modo establecido: EMBED\n- Fecha registro: ${timestamp}`);
     setShowBulkUrlModal(false);
-    setBulkUrlParams({ series_id: 0, season_id: 0, startEpisodeId: 0, urls: '' });
+    alert(`Completado: ${count} episodios actualizados.`);
   };
 
-  // --- LÓGICA DE IMPORTACIÓN TMDB ---
   const handleSearchEpisodes = async () => {
     if (!searchParams.series_id || !searchParams.season_id) {
-      alert("Por favor, selecciona una Serie y una Temporada.");
+      alert("Selecciona serie y temporada.");
       return;
     }
-
     const selectedShow = tvShows.find(s => Number(s.id) === searchParams.series_id);
     const selectedSeason = seasons.find(s => Number(s.id) === searchParams.season_id);
-
-    if (!selectedShow || !selectedSeason) {
-      alert("Error: No se pudo localizar la serie o temporada en la base de datos local.");
-      return;
-    }
-
+    if (!selectedShow || !selectedSeason) return;
     setIsSearching(true);
     setFetchedEpisodes([]);
-    setSelectedNumbers([]);
-
     try {
-      const tmdbId = selectedShow.tmdb_id;
-      const seasonNum = selectedSeason.order;
-      const cleanToken = tmdbToken.trim();
-
-      const url = `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNum}?language=es-ES`;
-      
-      let response = await fetch(url, {
-        headers: { 
-          'Authorization': `Bearer ${cleanToken}`, 
-          'Accept': 'application/json' 
-        }
+      const url = `https://api.themoviedb.org/3/tv/${selectedShow.tmdb_id}/season/${selectedSeason.order}?language=es-ES`;
+      const response = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${tmdbToken.trim()}`, 'Accept': 'application/json' }
       });
-
-      if (response.status === 401) {
-        const fallbackUrl = `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNum}?api_key=${cleanToken}&language=es-ES`;
-        response = await fetch(fallbackUrl);
-      }
-
-      if (!response.ok) {
-        throw new Error(`Error TMDB (${response.status})`);
-      }
-
+      if (!response.ok) throw new Error("Error TMDB");
       const data = await response.json();
-      if (data.episodes && Array.isArray(data.episodes)) {
-        setFetchedEpisodes(data.episodes.map((ep: any) => ({
-          episode_number: ep.episode_number,
-          name: ep.name || `Episodio ${ep.episode_number}`,
-          overview: ep.overview || "Sin descripción disponible.",
-          runtime: ep.runtime || 0,
-          still_path: ep.still_path || ""
-        })));
-      }
-    } catch (error: any) {
-      alert(error.message);
-    } finally {
-      setIsSearching(false);
-    }
+      setFetchedEpisodes(data.episodes || []);
+    } catch (error) { alert("Error al buscar episodios."); }
+    finally { setIsSearching(false); }
   };
 
   const registerFetchedEpisode = async (fe: FetchedEpisode) => {
     if (registeringIds.includes(fe.episode_number)) return;
     setRegisteringIds(prev => [...prev, fe.episode_number]);
-
     const posterJson = JSON.stringify({ original_image: `https://image.tmdb.org/t/p/w500${fe.still_path}` }).replace(/\//g, '\\/');
     const timestamp = getCurrentTimestamp();
-    
     const payload = {
       season_id: searchParams.season_id,
       series_id: searchParams.series_id,
@@ -247,34 +178,33 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       created_at: timestamp,
       updated_at: timestamp
     };
-
     try {
       const res = await fetch(`${API_BASE_URL}/episodes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (res.ok) {
-        refreshData();
-        return true;
-      }
-    } catch (error) { 
-      console.error(error); 
-    } finally { 
-      setRegisteringIds(prev => prev.filter(id => id !== fe.episode_number)); 
-    }
-    return false;
+      if (res.ok) refreshData();
+    } catch (error) { console.error(error); }
+    finally { setRegisteringIds(prev => prev.filter(id => id !== fe.episode_number)); }
   };
 
-  // Fix: handleUpdate now uses correctly defined editFormData and setEditFormData
+  const handleBulkRegister = async () => {
+    if (selectedNumbers.length === 0) return;
+    setIsBulkRegistering(true);
+    for (const num of selectedNumbers) {
+      const fe = fetchedEpisodes.find(e => e.episode_number === num);
+      if (fe) await registerFetchedEpisode(fe);
+    }
+    setIsBulkRegistering(false);
+    setSelectedNumbers([]);
+  };
+
   const handleUpdate = async () => {
     if (!editFormData.id) return;
     setIsSaving(true);
     try {
-      const payload = {
-          ...editFormData,
-          updated_at: getCurrentTimestamp()
-      };
+      const payload = { ...editFormData, updated_at: getCurrentTimestamp() };
       const res = await fetch(`${API_BASE_URL}/episodes/${editFormData.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -323,9 +253,9 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
           <table className="w-full text-left">
             <thead className="bg-gray-800/50 text-gray-400 uppercase text-[10px] tracking-widest">
               <tr>
-                <th className="px-6 py-4 font-bold w-16">Ord</th>
-                <th className="px-6 py-4 font-bold">Episodio</th>
-                <th className="px-6 py-4 font-bold text-right">Acciones</th>
+                <th className="px-6 py-4 font-bold w-16">ORD</th>
+                <th className="px-6 py-4 font-bold">EPISODIO</th>
+                <th className="px-6 py-4 font-bold text-right">ACCIONES</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
@@ -343,7 +273,6 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
-                      {/* Fix: Usage of setEditFormData now resolved */}
                       <button onClick={() => { setEditFormData(ep); setShowEditModal(true); }} className="text-gray-400 hover:text-indigo-400 p-2"><i className="fas fa-edit"></i></button>
                       <button onClick={() => setDeleteId(ep.id)} className="text-gray-400 hover:text-red-400 p-2"><i className="fas fa-trash"></i></button>
                     </div>
@@ -359,6 +288,68 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
           </table>
         </div>
       </div>
+
+      {/* MODAL IMPORTAR TMDB (El que no hacía nada) */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-8 border-b border-gray-800 flex justify-between items-center bg-gray-950/50">
+              <h4 className="text-2xl font-black text-white uppercase tracking-tighter">Buscador TMDB</h4>
+              <button onClick={() => setShowImportModal(false)} className="text-gray-500 hover:text-white"><i className="fas fa-times text-xl"></i></button>
+            </div>
+            
+            <div className="p-8 space-y-6 overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <select className="bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm" value={searchParams.series_id} onChange={(e)=>setSearchParams({...searchParams, series_id: parseInt(e.target.value)})}>
+                  <option value={0}>Selecciona serie...</option>
+                  {tvShows.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                </select>
+                <select className="bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm" value={searchParams.season_id} onChange={(e)=>setSearchParams({...searchParams, season_id: parseInt(e.target.value)})}>
+                  <option value={0}>Selecciona temporada...</option>
+                  {seasons.filter(s => s.tv_show_id.includes(`"${searchParams.series_id}"`)).map(s => <option key={s.id} value={s.id}>{s.season_name}</option>)}
+                </select>
+              </div>
+              
+              <button onClick={handleSearchEpisodes} disabled={isSearching} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl">
+                {isSearching ? <i className="fas fa-spinner animate-spin mr-2"></i> : <i className="fas fa-search mr-2"></i>}
+                BUSCAR EPISODIOS
+              </button>
+
+              <div className="grid grid-cols-1 gap-3">
+                {fetchedEpisodes.map(fe => {
+                  const isRegistered = episodes.some(e => Number(e.season_id) === searchParams.season_id && e.order === fe.episode_number);
+                  const isSelected = selectedNumbers.includes(fe.episode_number);
+                  return (
+                    <div key={fe.episode_number} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${isRegistered ? 'bg-green-900/10 border-green-500/20' : 'bg-gray-800/50 border-gray-700'}`}>
+                       <div className="w-10 text-indigo-400 font-black">#{fe.episode_number}</div>
+                       <div className="flex-1">
+                         <div className="text-white font-bold text-sm">{fe.name}</div>
+                         <div className="text-xs text-gray-500 line-clamp-1">{fe.overview}</div>
+                       </div>
+                       {isRegistered ? (
+                         <span className="text-green-500 text-[10px] font-black uppercase"><i className="fas fa-check-circle mr-1"></i>Registrado</span>
+                       ) : (
+                         <button 
+                           onClick={() => setSelectedNumbers(prev => isSelected ? prev.filter(n=>n!==fe.episode_number) : [...prev, fe.episode_number])}
+                           className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${isSelected ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-400'}`}
+                         >
+                           {isSelected ? 'Seleccionado' : 'Seleccionar'}
+                         </button>
+                       )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="p-8 bg-gray-950/50 flex justify-end gap-4 border-t border-gray-800">
+               <button onClick={handleBulkRegister} disabled={isBulkRegistering || selectedNumbers.length === 0} className="bg-green-600 hover:bg-green-500 text-white px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-20">
+                 {isBulkRegistering ? 'Procesando...' : `Registrar ${selectedNumbers.length} Seleccionados`}
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL LOTE DE URLS */}
       {showBulkUrlModal && (
@@ -428,24 +419,6 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                   onChange={(e) => setBulkUrlParams({...bulkUrlParams, urls: e.target.value})}
                 />
               </div>
-
-              {isProcessingBulkUrls && (
-                <div className="bg-indigo-900/20 border border-indigo-500/20 p-6 rounded-2xl animate-fadeIn shadow-lg">
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="flex items-center gap-3">
-                      <i className="fas fa-circle-notch animate-spin text-indigo-400"></i>
-                      <span className="text-indigo-400 text-[10px] font-black uppercase tracking-widest">{bulkUrlStatus.label}</span>
-                    </div>
-                    <span className="text-indigo-300 text-xs font-black">{bulkUrlStatus.current} / {bulkUrlStatus.total}</span>
-                  </div>
-                  <div className="w-full bg-gray-800 h-2.5 rounded-full overflow-hidden border border-gray-700">
-                    <div 
-                      className="bg-gradient-to-r from-indigo-600 to-indigo-400 h-full transition-all duration-500 shadow-[0_0_15px_rgba(99,102,241,0.6)]" 
-                      style={{ width: `${(bulkUrlStatus.current / bulkUrlStatus.total) * 100}%` }}
-                    ></div>
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="p-8 bg-gray-950/80 flex justify-end gap-5 border-t border-gray-800">
