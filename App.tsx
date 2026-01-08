@@ -7,10 +7,15 @@ import SeasonsSection from './components/SeasonsSection';
 import EpisodesSection from './components/EpisodesSection';
 import BackendCodeSection from './components/BackendCodeSection';
 import Dashboard from './components/Dashboard';
+import Login from './components/Login';
 
 const API_BASE_URL = 'https://apiflixy.plusmovie.pw/api.php';
 
 const App: React.FC = () => {
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem('is_auth') === 'true';
+  });
+  
   const [activeView, setActiveView] = useState<ViewType>('DASHBOARD');
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -20,8 +25,10 @@ const App: React.FC = () => {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (isLoggedIn) {
+      fetchData();
+    }
+  }, [isLoggedIn]);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -40,6 +47,11 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('is_auth');
+    setIsLoggedIn(false);
   };
 
   const renderContent = () => {
@@ -68,6 +80,10 @@ const App: React.FC = () => {
     }
   };
 
+  if (!isLoggedIn) {
+    return <Login onLoginSuccess={() => setIsLoggedIn(true)} />;
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-950">
       <Sidebar 
@@ -81,6 +97,7 @@ const App: React.FC = () => {
         <Header 
           activeView={activeView} 
           toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
+          onLogout={handleLogout}
         />
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-7xl mx-auto">
@@ -89,7 +106,6 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* Overlay para móvil cuando el sidebar está abierto */}
       {isSidebarOpen && (
         <div 
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"

@@ -4,9 +4,10 @@ import { ViewType } from '../types';
 interface HeaderProps {
   activeView: ViewType;
   toggleSidebar: () => void;
+  onLogout: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ activeView, toggleSidebar }) => {
+const Header: React.FC<HeaderProps> = ({ activeView, toggleSidebar, onLogout }) => {
   const getTitle = () => {
     switch (activeView) {
       case 'DASHBOARD': return 'Overview';
@@ -43,7 +44,12 @@ const Header: React.FC<HeaderProps> = ({ activeView, toggleSidebar }) => {
         <div className="flex items-center gap-3">
           <div className="text-right hidden xl:block">
             <p className="text-sm font-semibold text-white">Administrator</p>
-            <p className="text-xs text-gray-500">Super User</p>
+            <button 
+              onClick={onLogout}
+              className="text-[10px] text-indigo-400 hover:text-indigo-300 uppercase font-black tracking-widest"
+            >
+              Cerrar Sesión
+            </button>
           </div>
           <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white border-2 border-gray-800 overflow-hidden shadow-lg flex-shrink-0">
              <img src="https://picsum.photos/100/100" alt="Avatar" className="w-full h-full object-cover" />
