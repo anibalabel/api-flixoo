@@ -9,7 +9,8 @@ import EpisodesSection from './components/EpisodesSection';
 import BackendCodeSection from './components/BackendCodeSection';
 import Dashboard from './components/Dashboard';
 
-const API_BASE_URL = 'https://apiflixy.plusmovie.pw';
+// Se agrega /api.php para asegurar compatibilidad con el backend proporcionado
+const API_BASE_URL = 'https://apiflixy.plusmovie.pw/api.php';
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ViewType>('DASHBOARD');
@@ -47,7 +48,7 @@ const App: React.FC = () => {
       return (
         <div className="flex flex-col items-center justify-center h-64 text-gray-500">
           <i className="fas fa-circle-notch animate-spin text-4xl mb-4 text-indigo-500"></i>
-          <p className="font-medium">Conectando con apiflixy.plusmovie.pw...</p>
+          <p className="font-medium">Conectando con el servidor...</p>
         </div>
       );
     }

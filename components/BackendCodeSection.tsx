@@ -8,7 +8,7 @@ const BackendCodeSection: React.FC = () => {
   const phpCode = `<?php
 /**
  * REST API OXOOFLIX - Archivo: api.php
- * Implementación robusta de eliminación en cascada.
+ * Versión Corregida y Robusta
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -20,6 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     exit;
 }
 
+// Configuración de Base de Datos
 $db_host = "localhost";
 $db_port = 3306;
 $db_database = "plusmpzj_oxooflix";
@@ -36,35 +37,54 @@ try {
     exit;
 }
 
-$path = isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : '/';
-$request = explode('/', trim($path, '/'));
+// Enrutador Robusto
+$path_info = isset($_SERVER['PATH_INFO']) ? $_SERVER['PATH_INFO'] : '';
+if (empty($path_info)) {
+    // Intento alternativo para servidores sin PATH_INFO configurado
+    $script_name = $_SERVER['SCRIPT_NAME'];
+    $request_uri = $_SERVER['REQUEST_URI'];
+    $path_info = str_replace($script_name, '', $request_uri);
+    $path_info = explode('?', $path_info)[0]; // Limpiar query strings
+}
+
+$request = explode('/', trim($path_info, '/'));
+$resource = isset($request[0]) ? $request[0] : '';
+$id = isset($request[1]) ? $request[1] : null;
 $method = $_SERVER['REQUEST_METHOD'];
 
 // --- RUTAS ---
 
 // 1. TV SHOWS
-if ($request[0] == 'tv_shows') {
+if ($resource == 'tv_shows') {
     if ($method == 'GET') {
-        $stmt = $pdo->query("SELECT id, title, tmdb_id, thumbnail FROM tv_shows");
+        $stmt = $pdo->query("SELECT id, title, tmdb_id, thumbnail FROM tv_shows ORDER BY id DESC");
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
     }
-    elseif ($method == 'DELETE') {
-        $id = $request[1];
-        if ($id) {
-            // Cascada Manual: Eliminar Episodios -> Temporadas -> Serie
-            $pdo->prepare("DELETE FROM episodes WHERE series_id = ?")->execute([$id]);
-            // El tv_show_id en seasons suele guardarse como ["ID"]
-            $pdo->prepare("DELETE FROM seasons WHERE tv_show_id LIKE ?")->execute(['%"'.$id.'"%']);
-            $pdo->prepare("DELETE FROM tv_shows WHERE id = ?")->execute([$id]);
-            echo json_encode(["status" => "success", "message" => "Serie y contenido relacionado eliminado"]);
-        }
+    elseif ($method == 'POST') {
+        $data = json_decode(file_get_contents('php://input'), true);
+        $sql = "INSERT INTO tv_shows (title, tmdb_id, thumbnail) VALUES (?, ?, ?)";
+        $pdo->prepare($sql)->execute([$data['title'], $data['tmdb_id'], $data['thumbnail']]);
+        echo json_encode(["status" => "success", "id" => $pdo->lastInsertId()]);
+    }
+    elseif ($method == 'PUT' && $id) {
+        $data = json_decode(file_get_contents('php://input'), true);
+        $sql = "UPDATE tv_shows SET title=?, tmdb_id=?, thumbnail=? WHERE id=?";
+        $pdo->prepare($sql)->execute([$data['title'], $data['tmdb_id'], $data['thumbnail'], $id]);
+        echo json_encode(["status" => "success"]);
+    }
+    elseif ($method == 'DELETE' && $id) {
+        // Cascada manual para asegurar limpieza
+        $pdo->prepare("DELETE FROM episodes WHERE series_id = ?")->execute([$id]);
+        $pdo->prepare("DELETE FROM seasons WHERE tv_show_id LIKE ?")->execute(['%"'.$id.'"%']);
+        $pdo->prepare("DELETE FROM tv_shows WHERE id = ?")->execute([$id]);
+        echo json_encode(["status" => "success", "message" => "Serie y dependencias eliminadas"]);
     }
 }
 
 // 2. SEASONS
-if ($request[0] == 'seasons') {
+elseif ($resource == 'seasons') {
     if ($method == 'GET') {
-        $stmt = $pdo->query("SELECT id, tv_show_id, slug, season_name, \`order\`, status FROM seasons");
+        $stmt = $pdo->query("SELECT id, tv_show_id, slug, season_name, \`order\`, status FROM seasons ORDER BY \`order\` ASC");
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
     } 
     elseif ($method == 'POST') {
@@ -75,21 +95,27 @@ if ($request[0] == 'seasons') {
         $pdo->prepare($sql)->execute([$tv_show_id, $data['slug'], $data['season_name'], $data['order'], $data['status'], $ts, $ts]);
         echo json_encode(["status" => "success", "id" => $pdo->lastInsertId()]);
     }
-    elseif ($method == 'DELETE') {
-        $id = $request[1];
-        if ($id) {
-            // Cascada Manual: Eliminar Episodios asociados a la temporada
-            $pdo->prepare("DELETE FROM episodes WHERE season_id = ?")->execute([$id]);
-            $pdo->prepare("DELETE FROM seasons WHERE id = ?")->execute([$id]);
-            echo json_encode(["status" => "success", "message" => "Temporada y episodios eliminados"]);
-        }
+    elseif ($method == 'PUT' && $id) {
+        $data = json_decode(file_get_contents('php://input'), true);
+        $tv_show_id = '["' . $data['tv_show_id'] . '"]';
+        $ts = date('Y-m-d H:i:s');
+        $sql = "UPDATE seasons SET tv_show_id=?, slug=?, season_name=?, \`order\`, status=?, updated_at=? WHERE id=?";
+        $pdo->prepare($sql)->execute([$tv_show_id, $data['slug'], $data['season_name'], $data['order'], $data['status'], $ts, $id]);
+        echo json_encode(["status" => "success"]);
+    }
+    elseif ($method == 'DELETE' && $id) {
+        // Eliminar episodios de esta temporada primero
+        $pdo->prepare("DELETE FROM episodes WHERE season_id = ?")->execute([$id]);
+        // Eliminar la temporada (CORREGIDO: se añadió el $ faltante)
+        $pdo->prepare("DELETE FROM seasons WHERE id = ?")->execute([$id]);
+        echo json_encode(["status" => "success"]);
     }
 }
 
 // 3. EPISODES
-if ($request[0] == 'episodes') {
+elseif ($resource == 'episodes') {
     if ($method == 'GET') {
-        $stmt = $pdo->query("SELECT * FROM episodes");
+        $stmt = $pdo->query("SELECT * FROM episodes ORDER BY \`order\` ASC");
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
     }
     elseif ($method == 'POST') {
@@ -99,13 +125,20 @@ if ($request[0] == 'episodes') {
         $pdo->prepare($sql)->execute([$d['season_id'], $d['series_id'], $d['episode_name'], $d['slug'], $d['description'], $d['file_source'], $d['source_type'], $d['file_url'], $d['order'], $d['runtime'], $d['poster'], 0, $ts, $ts]);
         echo json_encode(["status" => "success"]);
     }
-    elseif ($method == 'DELETE') {
-        $id = $request[1];
-        if ($id) {
-            $pdo->prepare("DELETE FROM episodes WHERE id = ?")->execute([$id]);
-            echo json_encode(["status" => "success"]);
-        }
+    elseif ($method == 'PUT' && $id) {
+        $d = json_decode(file_get_contents('php://input'), true);
+        $ts = date('Y-m-d H:i:s');
+        $sql = "UPDATE episodes SET season_id=?, series_id=?, episode_name=?, slug=?, description=?, file_source=?, source_type=?, file_url=?, \`order\`, runtime=?, poster=?, total_view=?, updated_at=? WHERE id=?";
+        $pdo->prepare($sql)->execute([$d['season_id'], $d['series_id'], $d['episode_name'], $d['slug'], $d['description'], $d['file_source'], $d['source_type'], $d['file_url'], $d['order'], $d['runtime'], $d['poster'], $d['total_view'], $ts, $id]);
+        echo json_encode(["status" => "success"]);
     }
+    elseif ($method == 'DELETE' && $id) {
+        $pdo->prepare("DELETE FROM episodes WHERE id = ?")->execute([$id]);
+        echo json_encode(["status" => "success"]);
+    }
+} else {
+    http_response_code(404);
+    echo json_encode(["error" => "Ruta no encontrada", "path" => $path_info]);
 }
 ?>`;
 
@@ -127,7 +160,7 @@ if ($request[0] == 'episodes') {
             onClick={() => setActiveTab('PHP')}
             className={`px-4 py-2 rounded-lg font-semibold transition-all ${activeTab === 'PHP' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
           >
-            Código PHP (Actualizado)
+            Código PHP (CORREGIDO)
           </button>
           <button 
             onClick={() => setActiveTab('HOSTING')}

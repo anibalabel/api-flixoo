@@ -2,9 +2,8 @@
 import React, { useState } from 'react';
 import { Episode, Season, TVShow } from '../types';
 
-const API_BASE_URL = 'https://apiflixy.plusmovie.pw';
-// Token proporcionado por el usuario
-const TMDB_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIxNTU5ZjFmMGE4ODZhYTdlOTNmMjJlMDljNDdiOWM5ZSIsIm5iZiI6MTU4MzcwMDU0Mi44NCwic3ViIjoiNWU2NTVhM2U0NTlhZDYwMDExNTkzYzcwIiwic2NvcGVzIjpbImFwaV9yZWFkIl0sInZlcnNpb24iOjF9.ZOWuTVPOngZqSEgrSfBKN8AXpK77ADFwIvJibc3-ycI';
+const API_BASE_URL = 'https://apiflixy.plusmovie.pw/api.php';
+const TMDB_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIxNTU5ZjFmMGE4ODZhYTdlOTNmMjJlMDljNDdiOWM5ZSIsIm5iZiI6MTU4MzcwMDU0Mi44NCwic3ViIjoiNWU2NTVhM2U0NTlhZDYwMDExNTkzYzcwIiwic2NvcGVzIjpbImapi9yZWFkIl0sInZlcnNpb24iOjF9.ZOWuTVPOngZqSEgrSfBKN8AXpK77ADFwIvJibc3-ycI';
 
 interface EpisodesSectionProps {
   episodes: Episode[];
@@ -23,16 +22,22 @@ interface FetchedEpisode {
 }
 
 const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tvShows, setEpisodes, refreshData }) => {
-  const [showModal, setShowModal] = useState(false);
+  // --- Estados de UI ---
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // --- Estados de Datos de Importación ---
   const [fetchedEpisodes, setFetchedEpisodes] = useState<FetchedEpisode[]>([]);
   const [registeringIds, setRegisteringIds] = useState<number[]>([]);
+  const [searchParams, setSearchParams] = useState({ series_id: 0, season_id: 0 });
   
-  const [formData, setFormData] = useState<{series_id: number; season_id: number}>({
-    series_id: 0,
-    season_id: 0,
-  });
+  // --- Estados de Edición ---
+  const [editFormData, setEditFormData] = useState<Partial<Episode>>({});
 
+  // --- Funciones de Utilidad ---
   const getImageUrl = (input: any) => {
     if (!input) return 'https://via.placeholder.com/500x281?text=Sin+Imagen';
     let path = "";
@@ -51,7 +56,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         }
       }
     }
-    if (path.startsWith('/')) {
+    if (path && path.startsWith('/')) {
         return `https://image.tmdb.org/t/p/w500${path}`;
     }
     return (!path || path === "" || path === "null" || path === ".") 
@@ -59,66 +64,52 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       : path;
   };
 
+  // --- LÓGICA DE IMPORTACIÓN (TMDB) ---
   const handleSearchEpisodes = async () => {
-    console.log("Iniciando búsqueda con:", formData);
-    
-    if (!formData.series_id || !formData.season_id) {
-      alert("Debes seleccionar una Serie y una Temporada primero.");
+    if (!searchParams.series_id || !searchParams.season_id) {
+      alert("Selecciona Serie y Temporada antes de consultar.");
       return;
     }
 
-    const selectedShow = tvShows.find(s => Number(s.id) === formData.series_id);
-    const selectedSeason = seasons.find(s => Number(s.id) === formData.season_id);
+    const selectedShow = tvShows.find(s => Number(s.id) === searchParams.series_id);
+    const selectedSeason = seasons.find(s => Number(s.id) === searchParams.season_id);
 
-    if (!selectedShow) {
-      alert("No se pudo encontrar la serie seleccionada en la base de datos.");
-      return;
-    }
-    if (!selectedSeason) {
-      alert("No se pudo encontrar la temporada seleccionada en la base de datos.");
+    if (!selectedShow || !selectedSeason) {
+      alert("No se pudo identificar la serie o temporada seleccionada.");
       return;
     }
 
     setIsSearching(true);
-    setFetchedEpisodes([]);
+    setFetchedEpisodes([]); // Limpiar resultados anteriores
 
     try {
-      // URL dinámica: /tv/{series_id}/season/{season_number}
-      const url = `https://api.themoviedb.org/3/tv/${selectedShow.tmdb_id}/season/${selectedSeason.order}?language=es-ES`;
-      console.log("Consultando TMDB:", url);
-
+      const tmdbId = selectedShow.tmdb_id;
+      const seasonNum = selectedSeason.order;
+      const url = `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNum}?language=es-ES`;
+      
       const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'accept': 'application/json',
-          'Authorization': `Bearer ${TMDB_TOKEN}`
-        }
+        headers: { 'Authorization': `Bearer ${TMDB_TOKEN}`, 'Accept': 'application/json' }
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error("TMDB Error:", errorData);
-        throw new Error(errorData.status_message || "Error al conectar con TMDB");
+        throw new Error(`Error TMDB: El servidor respondió con código ${response.status}`);
       }
-      
+
       const data = await response.json();
-      console.log("Datos recibidos de TMDB:", data);
-      
       if (data.episodes && Array.isArray(data.episodes)) {
-        const formatted = data.episodes.map((ep: any) => ({
+        setFetchedEpisodes(data.episodes.map((ep: any) => ({
           episode_number: ep.episode_number,
           name: ep.name || `Episodio ${ep.episode_number}`,
           overview: ep.overview || "Sin descripción.",
           runtime: ep.runtime || 0,
           still_path: ep.still_path || ""
-        }));
-        setFetchedEpisodes(formatted);
+        })));
       } else {
-        alert("La API de TMDB no devolvió episodios para esta temporada.");
+        alert("No se encontraron episodios para esta temporada en TMDB.");
       }
     } catch (error: any) {
-      console.error("Error en handleSearchEpisodes:", error);
-      alert(`Error: ${error.message}`);
+      console.error("Error consultando TMDB:", error);
+      alert(`Error al consultar API: ${error.message}`);
     } finally {
       setIsSearching(false);
     }
@@ -128,22 +119,16 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
     if (registeringIds.includes(fe.episode_number)) return;
     setRegisteringIds(prev => [...prev, fe.episode_number]);
 
-    // Formato de póster Oxoo: JSON con barras escapadas
-    const rawPath = fe.still_path.startsWith('/') ? fe.still_path : `/${fe.still_path}`;
-    const finalImageUrl = `https://image.tmdb.org/t/p/w500${rawPath}`;
-    
-    // IMPORTANTE: Oxoo guarda las URLs en la DB escapando las barras: https:\/\/...
-    const posterJson = JSON.stringify({ original_image: finalImageUrl }).replace(/\//g, '\\/');
-
+    const posterJson = JSON.stringify({ original_image: `https://image.tmdb.org/t/p/w500${fe.still_path}` }).replace(/\//g, '\\/');
     const payload = {
-      season_id: formData.season_id,
-      series_id: formData.series_id,
+      season_id: searchParams.season_id,
+      series_id: searchParams.series_id,
       episode_name: fe.name,
       slug: fe.name.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, ''),
       description: fe.overview,
       file_source: 'server',
       source_type: 'mp4',
-      file_url: '', // Se deja vacío para que el admin lo llene luego
+      file_url: '',
       order: fe.episode_number,
       runtime: `${fe.runtime} min`,
       poster: posterJson,
@@ -156,35 +141,67 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      
       if (res.ok) {
-        console.log(`Episodio ${fe.episode_number} registrado con éxito.`);
         refreshData();
       } else {
-        const err = await res.json();
-        alert(`Error al registrar episodio ${fe.episode_number}: ${err.error || 'Error desconocido'}`);
+        alert(`Error al registrar episodio ${fe.episode_number}`);
       }
     } catch (error) { 
-      console.error(error);
-      alert("Error de conexión al intentar registrar el episodio.");
-    } finally {
-      setRegisteringIds(prev => prev.filter(id => id !== fe.episode_number));
+      console.error(error); 
+    } finally { 
+      setRegisteringIds(prev => prev.filter(id => id !== fe.episode_number)); 
+    }
+  };
+
+  // --- LÓGICA DE GESTIÓN (CRUD) ---
+  const handleUpdate = async () => {
+    if (!editFormData.id) return;
+    setIsSaving(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/episodes/${editFormData.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData)
+      });
+      if (res.ok) {
+        refreshData();
+        setShowEditModal(false);
+      } else {
+        alert("Error al actualizar el episodio.");
+      }
+    } catch (error) { console.error(error); }
+    finally { setIsSaving(false); }
+  };
+
+  const executeDelete = async () => {
+    if (!deleteId) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/episodes/${deleteId}`, { 
+        method: 'DELETE',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (res.ok) {
+        refreshData();
+        setDeleteId(null);
+      } else {
+        alert("No se pudo eliminar el episodio del servidor.");
+      }
+    } catch (error) { 
+      console.error(error); 
+      alert("Error de conexión al eliminar.");
     }
   };
 
   return (
     <div className="space-y-6">
+      {/* SECCIÓN PRINCIPAL: TABLA */}
       <div className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden shadow-2xl">
         <div className="p-6 border-b border-gray-800 flex justify-between items-center bg-gray-900/50">
           <h3 className="text-xl font-bold text-white flex items-center gap-3">
-             <i className="fas fa-film text-indigo-500"></i>
-             Gestión de Episodios
+             <i className="fas fa-film text-indigo-500"></i> Gestión de Episodios
           </h3>
-          <button 
-            onClick={() => setShowModal(true)}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg active:scale-95 flex items-center gap-2"
-          >
-            <i className="fas fa-cloud-download-alt"></i> Importar desde TMDB
+          <button onClick={() => setShowImportModal(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg active:scale-95">
+            <i className="fas fa-cloud-download-alt mr-2"></i> Importar de TMDB
           </button>
         </div>
         
@@ -193,7 +210,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
             <thead className="bg-gray-800/50 text-gray-400 uppercase text-[10px] tracking-widest">
               <tr>
                 <th className="px-6 py-4 font-bold w-16">Ord</th>
-                <th className="px-6 py-4 font-bold">Información del Episodio</th>
+                <th className="px-6 py-4 font-bold">Episodio</th>
                 <th className="px-6 py-4 font-bold text-right">Acciones</th>
               </tr>
             </thead>
@@ -203,29 +220,24 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                   <td className="px-6 py-4 font-black text-indigo-400">#{ep.order}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-4">
-                      <img 
-                        src={getImageUrl(ep.poster)} 
-                        className="w-24 h-14 rounded-lg object-cover border border-gray-700 bg-gray-800 shadow-xl"
-                        onError={(e) => (e.currentTarget.src = 'https://via.placeholder.com/500x281?text=Error+Poster')}
-                      />
+                      <img src={getImageUrl(ep.poster)} className="w-24 h-14 rounded-lg object-cover border border-gray-700 bg-gray-800 shadow-xl" />
                       <div className="min-w-0 flex-1">
                         <p className="text-white font-bold truncate text-sm">{ep.episode_name}</p>
-                        <p className="text-[10px] text-gray-500 font-mono truncate mt-1 bg-black/30 p-1 px-2 rounded-md border border-gray-800 inline-block max-w-full">
-                            {getImageUrl(ep.poster)}
-                        </p>
+                        <p className="text-[10px] text-gray-500 font-mono truncate mt-1">{ep.file_url || 'Sin URL de video'}</p>
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button onClick={() => {if(window.confirm('¿Eliminar episodio?')) fetch(`${API_BASE_URL}/episodes/${ep.id}`, {method:'DELETE'}).then(()=>refreshData())}} className="text-gray-600 hover:text-red-400 p-2 transition-colors">
-                      <i className="fas fa-trash-alt"></i>
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => { setEditFormData(ep); setShowEditModal(true); }} className="text-gray-400 hover:text-indigo-400 p-2"><i className="fas fa-edit"></i></button>
+                      <button onClick={() => setDeleteId(ep.id)} className="text-gray-400 hover:text-red-400 p-2"><i className="fas fa-trash"></i></button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {episodes.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-6 py-12 text-center text-gray-600 italic">No hay episodios registrados para mostrar.</td>
+                  <td colSpan={3} className="px-6 py-10 text-center text-gray-500 italic">No hay episodios registrados.</td>
                 </tr>
               )}
             </tbody>
@@ -233,129 +245,142 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         </div>
       </div>
 
-      {showModal && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-xl flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-[2.5rem] w-full max-w-6xl overflow-hidden shadow-2xl animate-scaleIn">
-            <div className="flex h-[85vh]">
-              {/* Panel de Control Lateral */}
-              <div className="w-80 border-r border-gray-800 p-8 flex flex-col bg-gray-950/80">
-                <div className="mb-10">
-                    <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl mb-4 shadow-xl shadow-blue-600/20">
-                        <i className="fas fa-satellite-dish"></i>
-                    </div>
-                    <h4 className="text-xl font-black text-white tracking-tighter uppercase leading-none">TMDB API Fetcher</h4>
-                    <p className="text-gray-500 text-[10px] font-bold mt-2 uppercase tracking-widest">Conexión directa v3</p>
-                </div>
+      {/* MODAL ELIMINAR */}
+      {deleteId && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-gray-900 border border-red-900/30 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl">
+            <div className="p-8 text-center">
+              <div className="w-16 h-16 bg-red-900/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/30">
+                <i className="fas fa-exclamation-triangle text-2xl"></i>
+              </div>
+              <h4 className="text-xl font-bold text-white mb-2">Eliminar Episodio</h4>
+              <p className="text-gray-400 text-sm">¿Estás seguro de eliminar este episodio de forma permanente?</p>
+            </div>
+            <div className="flex border-t border-gray-800">
+              <button onClick={() => setDeleteId(null)} className="flex-1 px-4 py-4 text-gray-400 font-bold hover:bg-gray-800 transition-colors">Cancelar</button>
+              <button onClick={executeDelete} className="flex-1 px-4 py-4 bg-red-600/10 text-red-500 font-bold hover:bg-red-600 hover:text-white transition-all border-l border-gray-800">Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
-                <div className="space-y-6 flex-1">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">1. Seleccionar Serie</label>
-                    <select 
-                      className="w-full bg-gray-800 border-2 border-transparent focus:border-blue-500 rounded-2xl px-5 py-4 text-white text-sm outline-none transition-all appearance-none cursor-pointer" 
-                      onChange={(e) => setFormData({...formData, series_id: parseInt(e.target.value), season_id: 0})}
-                      value={formData.series_id}
-                    >
-                      <option value={0}>Elegir Serie...</option>
-                      {tvShows.map(s => <option key={s.id} value={s.id}>{s.title} (ID: {s.tmdb_id})</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">2. Temporada</label>
-                    <select 
-                      className="w-full bg-gray-800 border-2 border-transparent focus:border-blue-500 rounded-2xl px-5 py-4 text-white text-sm outline-none transition-all appearance-none disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer" 
-                      value={formData.season_id} 
-                      onChange={(e) => setFormData({...formData, season_id: parseInt(e.target.value)})}
-                      disabled={!formData.series_id}
-                    >
-                      <option value={0}>Elegir Temporada...</option>
-                      {seasons
-                        .filter(s => s.tv_show_id && s.tv_show_id.includes(`"${formData.series_id}"`))
-                        .map(s => <option key={s.id} value={s.id}>{s.season_name} (S{s.order})</option>)
-                      }
-                    </select>
-                  </div>
-                  <button 
-                    onClick={handleSearchEpisodes} 
-                    disabled={isSearching || !formData.season_id}
-                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-5 rounded-2xl shadow-xl shadow-blue-600/10 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:grayscale disabled:opacity-50"
+      {/* MODAL IMPORTAR TMDB */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-xl flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-[2rem] w-full max-w-6xl h-[85vh] overflow-hidden shadow-2xl flex">
+            {/* Sidebar Filtros */}
+            <div className="w-80 border-r border-gray-800 p-8 flex flex-col bg-gray-950/80">
+              <h4 className="text-xl font-black text-white uppercase mb-8">Importador TMDB</h4>
+              <div className="space-y-6 flex-1">
+                <div>
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block">1. Seleccionar Serie</label>
+                  <select 
+                    className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" 
+                    onChange={(e) => setSearchParams({...searchParams, series_id: parseInt(e.target.value), season_id: 0})} 
+                    value={searchParams.series_id}
                   >
-                    {isSearching ? <i className="fas fa-sync-alt animate-spin"></i> : <i className="fas fa-search"></i>}
-                    CONSULTAR API
-                  </button>
+                    <option value={0}>Elegir Serie...</option>
+                    {tvShows.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                  </select>
                 </div>
                 
+                <div>
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block">2. Seleccionar Temporada</label>
+                  <select 
+                    className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" 
+                    value={searchParams.season_id} 
+                    onChange={(e) => setSearchParams({...searchParams, season_id: parseInt(e.target.value)})} 
+                    disabled={!searchParams.series_id}
+                  >
+                    <option value={0}>Elegir Temporada...</option>
+                    {seasons
+                      .filter(s => {
+                        if (!s || !s.tv_show_id || typeof s.tv_show_id !== 'string') return false;
+                        return s.tv_show_id.includes(`"${searchParams.series_id}"`);
+                      })
+                      .map(s => <option key={s.id} value={s.id}>{s.season_name}</option>)}
+                  </select>
+                </div>
+
                 <button 
-                  onClick={() => { setShowModal(false); setFetchedEpisodes([]); }} 
-                  className="mt-8 text-gray-600 hover:text-white font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 justify-center py-2 hover:bg-white/5 rounded-lg transition-all"
+                  onClick={handleSearchEpisodes} 
+                  disabled={isSearching || !searchParams.season_id} 
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 disabled:text-gray-600 text-white font-black py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-3 active:scale-95"
                 >
-                  <i className="fas fa-arrow-left"></i> Volver al panel
+                  {isSearching ? <i className="fas fa-sync animate-spin"></i> : <i className="fas fa-search"></i>}
+                  {isSearching ? 'CONSULTANDO...' : 'CONSULTAR API'}
                 </button>
               </div>
+              <button onClick={() => { setShowImportModal(false); setFetchedEpisodes([]); }} className="mt-8 text-gray-500 hover:text-white font-bold text-xs uppercase tracking-widest transition-colors">Cerrar</button>
+            </div>
 
-              {/* Área de resultados */}
-              <div className="flex-1 overflow-y-auto p-10 bg-gray-900/40">
-                {isSearching && (
-                  <div className="flex flex-col items-center justify-center h-full">
-                    <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-                    <p className="font-black text-white text-xl uppercase tracking-tighter">Conectando con TMDB...</p>
-                  </div>
-                )}
-
-                {fetchedEpisodes.length > 0 && (
-                  <div className="space-y-6 animate-fadeIn">
-                    <div className="bg-blue-600/5 border border-blue-500/20 p-6 rounded-3xl flex items-center gap-6">
-                        <div className="w-12 h-12 bg-blue-600/20 rounded-xl flex items-center justify-center text-blue-400 text-xl shadow-inner">
-                            <i className="fas fa-info-circle"></i>
-                        </div>
-                        <div>
-                            <p className="text-xs text-white font-black uppercase tracking-wider">Episodios Encontrados</p>
-                            <p className="text-[11px] text-gray-500 leading-relaxed mt-1">
-                                Los pósters se guardarán usando la resolución <strong>w500</strong> con el formato JSON escapado requerido por Oxoo.
-                            </p>
-                        </div>
+            {/* Panel de Resultados */}
+            <div className="flex-1 overflow-y-auto p-10 bg-gray-900/40">
+              {fetchedEpisodes.length > 0 ? (
+                <div className="grid grid-cols-1 gap-4">
+                  {fetchedEpisodes.map(fe => (
+                    <div key={fe.episode_number} className="flex items-center gap-6 p-5 rounded-3xl bg-gray-800/40 border border-gray-700/50 hover:border-indigo-500/30 transition-all group">
+                      <img src={`https://image.tmdb.org/t/p/w300${fe.still_path}`} className="w-40 h-24 object-cover rounded-xl border border-gray-700 bg-gray-900" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-white font-black text-lg group-hover:text-indigo-400 transition-colors">#{fe.episode_number} {fe.name}</div>
+                        <p className="text-[11px] text-gray-500 line-clamp-2 italic leading-relaxed mt-1">"{fe.overview}"</p>
+                      </div>
+                      <button 
+                        onClick={() => registerFetchedEpisode(fe)} 
+                        disabled={registeringIds.includes(fe.episode_number)} 
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-all shadow-lg shadow-indigo-600/10"
+                      >
+                        {registeringIds.includes(fe.episode_number) ? <i className="fas fa-spinner animate-spin"></i> : 'REGISTRAR'}
+                      </button>
                     </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-gray-600 opacity-50">
+                  <i className="fas fa-database text-6xl mb-4"></i>
+                  <p className="font-bold uppercase tracking-widest text-sm">Selecciona una serie y temporada para cargar datos</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
-                    <div className="grid grid-cols-1 gap-4">
-                        {fetchedEpisodes.map(fe => (
-                        <div key={fe.episode_number} className="flex items-center gap-6 p-6 rounded-[2rem] bg-gray-800/20 border border-gray-700/40 hover:border-blue-500/40 transition-all group">
-                            <div className="w-48 h-28 bg-black rounded-2xl overflow-hidden shrink-0 border border-gray-700 shadow-2xl relative">
-                                <img 
-                                    src={`https://image.tmdb.org/t/p/w500${fe.still_path}`} 
-                                    className="w-full h-full object-cover" 
-                                    onError={(e) => (e.currentTarget.src = 'https://via.placeholder.com/500x281?text=Sin+Imagen')}
-                                />
-                                <div className="absolute top-3 left-3 bg-blue-600 text-[10px] font-black text-white px-2.5 py-1 rounded-lg uppercase shadow-lg">Ep {fe.episode_number}</div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="text-white font-black text-xl mb-2 truncate group-hover:text-blue-400 transition-colors">{fe.name}</div>
-                                <div className="flex items-center gap-2 mb-3">
-                                    <span className="text-[9px] text-green-500 font-black bg-green-500/10 px-2 py-1 rounded-md uppercase border border-green-500/20">Still Path:</span>
-                                    <span className="text-[11px] font-mono text-gray-400 truncate max-w-xs">{fe.still_path || '/no-path'}</span>
-                                    <span className="text-[9px] text-blue-400 font-black bg-blue-400/10 px-2 py-1 rounded-md uppercase border border-blue-400/20 ml-auto">{fe.runtime} min</span>
-                                </div>
-                                <p className="text-[11px] text-gray-500 line-clamp-2 italic leading-relaxed">"{fe.overview || 'Sin descripción proporcionada por la API.'}"</p>
-                            </div>
-                            <button 
-                                onClick={() => registerFetchedEpisode(fe)} 
-                                disabled={registeringIds.includes(fe.episode_number)}
-                                className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all disabled:opacity-50 shadow-xl shadow-blue-600/10 active:scale-95"
-                            >
-                                {registeringIds.includes(fe.episode_number) ? <i className="fas fa-spinner animate-spin"></i> : 'REGISTRAR'}
-                            </button>
-                        </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-
-                {fetchedEpisodes.length === 0 && !isSearching && (
-                  <div className="flex flex-col items-center justify-center h-full text-gray-800 opacity-20 select-none">
-                    <i className="fas fa-database text-[12rem] mb-8"></i>
-                    <p className="text-5xl font-black uppercase tracking-tighter">API Inactiva</p>
-                    <p className="text-lg font-bold">Selecciona una serie y temporada para comenzar.</p>
-                  </div>
-                )}
+      {/* MODAL EDITAR EPISODIO */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-lg p-8 shadow-2xl">
+            <h4 className="text-xl font-black text-white uppercase mb-6 tracking-tighter">Editar Episodio</h4>
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Nombre del Episodio</label>
+                <input type="text" className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white text-sm border border-transparent focus:border-indigo-500 outline-none transition-all" value={editFormData.episode_name || ''} onChange={(e) => setEditFormData({...editFormData, episode_name: e.target.value})} />
               </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">URL del Video (MP4/HLS)</label>
+                <input type="text" className="w-full bg-gray-800 rounded-xl px-4 py-3 text-indigo-300 text-sm font-mono border border-transparent focus:border-indigo-500 outline-none transition-all" placeholder="https://..." value={editFormData.file_url || ''} onChange={(e) => setEditFormData({...editFormData, file_url: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Orden</label>
+                  <input type="number" className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white text-sm border border-transparent focus:border-indigo-500 outline-none transition-all" value={editFormData.order || ''} onChange={(e) => setEditFormData({...editFormData, order: parseInt(e.target.value)})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Duración</label>
+                  <input type="text" className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white text-sm border border-transparent focus:border-indigo-500 outline-none transition-all" value={editFormData.runtime || ''} onChange={(e) => setEditFormData({...editFormData, runtime: e.target.value})} />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Descripción</label>
+                <textarea className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white text-sm h-32 border border-transparent focus:border-indigo-500 outline-none transition-all" value={editFormData.description || ''} onChange={(e) => setEditFormData({...editFormData, description: e.target.value})} />
+              </div>
+            </div>
+            <div className="mt-8 flex justify-end gap-4">
+              <button onClick={() => setShowEditModal(false)} className="text-gray-500 font-bold px-4 transition-colors hover:text-white uppercase text-xs tracking-widest">Cancelar</button>
+              <button onClick={handleUpdate} disabled={isSaving} className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg shadow-indigo-600/20 active:scale-95 disabled:opacity-50 flex items-center gap-2">
+                {isSaving ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-save"></i>}
+                {isSaving ? 'Guardando...' : 'Guardar Cambios'}
+              </button>
             </div>
           </div>
         </div>
