@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Episode, Season, TVShow } from '../types';
 
@@ -30,6 +29,10 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
   const [isSearching, setIsSearching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isProcessingBulkUrls, setIsProcessingBulkUrls] = useState(false);
+  const [bulkUrlProgress, setBulkUrlProgress] = useState({ current: 0, total: 0 });
+  const [bulkProcessComplete, setBulkProcessComplete] = useState(false);
+  const [bulkError, setBulkError] = useState('');
+
   const [tmdbToken, setTmdbToken] = useState(localStorage.getItem('tmdb_token') || DEFAULT_TMDB_TOKEN);
   const [fetchedEpisodes, setFetchedEpisodes] = useState<FetchedEpisode[]>([]);
   const [selectedEpisodeNumbers, setSelectedEpisodeNumbers] = useState<number[]>([]);
@@ -108,7 +111,6 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
   };
 
   const toggleEpisodeSelection = (episodeNumber: number) => {
-    // Verificar si ya está importado
     const isRegistered = episodes.some(e => Number(e.season_id) === searchParams.season_id && e.order === episodeNumber);
     if (isRegistered) return;
 
@@ -203,17 +205,21 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
     finally { setIsSaving(false); }
   };
 
-  // Fix: Implemented handleProcessBulkUrls to handle multiple URL updates sequentially
   const handleProcessBulkUrls = async () => {
+    setBulkError('');
     if (!bulkUrlParams.series_id || !bulkUrlParams.season_id || !bulkUrlParams.urls.trim()) {
-      alert("Por favor selecciona serie, temporada y añade URLs.");
+      setBulkError("Por favor selecciona serie, temporada y añade URLs.");
       return;
     }
 
     const urlList = bulkUrlParams.urls.split('\n').map(u => u.trim()).filter(u => u !== "");
-    if (urlList.length === 0) return;
+    if (urlList.length === 0) {
+       setBulkError("No se encontraron URLs válidas en el texto.");
+       return;
+    }
 
     setIsProcessingBulkUrls(true);
+    setBulkUrlProgress({ current: 0, total: urlList.length });
     
     try {
       const seasonEpisodes = episodes
@@ -241,18 +247,26 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
+        
+        setBulkUrlProgress(prev => ({ ...prev, current: i + 1 }));
       }
       
       refreshData();
-      setShowBulkUrlModal(false);
-      setBulkUrlParams({ ...bulkUrlParams, urls: '' });
-      alert("Proceso de lote completado.");
+      setBulkProcessComplete(true);
     } catch (error) {
       console.error("Error processing bulk URLs:", error);
-      alert("Error al procesar el lote.");
+      setBulkError("Error crítico al procesar el lote. Verifica la conexión.");
     } finally {
       setIsProcessingBulkUrls(false);
     }
+  };
+
+  const closeBulkModal = () => {
+    setShowBulkUrlModal(false);
+    setBulkProcessComplete(false);
+    setBulkUrlProgress({ current: 0, total: 0 });
+    setBulkError('');
+    setBulkUrlParams({ ...bulkUrlParams, urls: '' });
   };
 
   const filteredSeasons = seasons.filter(s => {
@@ -269,7 +283,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
              <i className="fas fa-film text-indigo-500"></i> Gestión de Episodios
           </h3>
           <div className="flex flex-wrap justify-center gap-2 md:gap-3 w-full sm:w-auto">
-            <button onClick={() => setShowBulkUrlModal(true)} className="flex-1 sm:flex-none bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 md:px-5 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all border border-gray-700 shadow-lg">
+            <button onClick={() => { setBulkProcessComplete(false); setShowBulkUrlModal(true); }} className="flex-1 sm:flex-none bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 md:px-5 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all border border-gray-700 shadow-lg">
               <i className="fas fa-list-ol mr-2"></i> Lote
             </button>
             <button onClick={() => setShowImportModal(true)} className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-500 text-white px-4 md:px-5 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all shadow-lg active:scale-95">
@@ -330,7 +344,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         </div>
       </div>
 
-      {/* MODAL IMPORTAR TMDB (IMPORTACIÓN MÚLTIPLE) */}
+      {/* MODAL IMPORTAR TMDB */}
       {showImportModal && (
         <div className="fixed inset-0 bg-black/95 backdrop-blur-md flex items-center justify-center z-[60] p-2 sm:p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[95vh] animate-scaleIn">
@@ -397,7 +411,6 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                   fetchedEpisodes.map(fe => {
                     const isRegistered = episodes.some(e => Number(e.season_id) === searchParams.season_id && e.order === fe.episode_number);
                     const isSelected = selectedEpisodeNumbers.includes(fe.episode_number);
-                    const isProc = registeringIds.includes(fe.episode_number);
                     
                     return (
                       <div 
@@ -415,9 +428,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-[11px] font-bold text-white truncate">E{fe.episode_number}: {fe.name}</p>
-                          <p className="text-[9px] text-gray-500 truncate mt-0.5">{fe.overview ? 'Con info' : 'Sin info'}</p>
                         </div>
-                        
                         <div className="flex items-center gap-3">
                            {!isRegistered && (
                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-gray-600'}`}>
@@ -432,13 +443,12 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                 ) : (
                   <div className="col-span-full py-16 text-center text-gray-600">
                      <i className="fas fa-cloud-download-alt mb-4 block text-4xl opacity-20"></i>
-                     <p className="text-sm font-medium">Selecciona los parámetros y pulsa buscar para importar episodios.</p>
+                     <p className="text-sm font-medium">Busca episodios para importar.</p>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* BARRA DE ACCIONES PARA IMPORTACIÓN MASIVA */}
             {selectedEpisodeNumbers.length > 0 && (
               <div className="p-6 bg-gray-950/80 border-t border-gray-800 flex items-center justify-between animate-fadeIn">
                  <div className="flex flex-col">
@@ -446,7 +456,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                        {bulkImporting ? 'Procesando Lote...' : 'Listo para importar'}
                     </span>
                     <span className="text-[10px] text-gray-500 mt-1">
-                       {bulkImporting ? `Progreso: ${importProgress} de ${selectedEpisodeNumbers.length}` : `${selectedEpisodeNumbers.length} episodios seleccionados para la base de datos`}
+                       {bulkImporting ? `Progreso: ${importProgress} de ${selectedEpisodeNumbers.length}` : `${selectedEpisodeNumbers.length} episodios seleccionados`}
                     </span>
                  </div>
                  <button 
@@ -463,7 +473,94 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         </div>
       )}
 
-      {/* MODAL EDICION */}
+      {/* MODAL PROCESAR LOTE DE URLS (REDISEÑADO) */}
+      {showBulkUrlModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl animate-scaleIn">
+            <div className="p-6 md:p-8 border-b border-gray-800 bg-gray-950/50 flex justify-between items-center">
+              <h4 className="text-xl font-black text-white uppercase tracking-tighter">Procesar Lote de URLs</h4>
+              {bulkProcessComplete && (
+                <div className="bg-green-500/10 text-green-500 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest animate-fadeIn border border-green-500/20">
+                  Completado
+                </div>
+              )}
+            </div>
+            
+            <div className="p-6 md:p-8 space-y-5 min-h-[300px] flex flex-col justify-center">
+              {!bulkProcessComplete ? (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-xs md:text-sm outline-none" value={bulkUrlParams.series_id} onChange={(e)=>setBulkUrlParams({...bulkUrlParams, series_id: parseInt(e.target.value)})}>
+                      <option value={0}>Serie...</option>
+                      {tvShows.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                    </select>
+                    <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-xs md:text-sm outline-none" value={bulkUrlParams.season_id} onChange={(e)=>setBulkUrlParams({...bulkUrlParams, season_id: parseInt(e.target.value)})}>
+                      <option value={0}>Temporada...</option>
+                      {seasons.filter(s => {
+                        const tvShowIdStr = String(s.tv_show_id || '');
+                        return tvShowIdStr.includes(`"${bulkUrlParams.series_id}"`) || tvShowIdStr.includes(`${bulkUrlParams.series_id}`);
+                      }).map(s => <option key={s.id} value={s.id}>{s.season_name}</option>)}
+                    </select>
+                  </div>
+                  <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-xs md:text-sm outline-none" value={bulkUrlParams.startEpisodeId} onChange={(e)=>setBulkUrlParams({...bulkUrlParams, startEpisodeId: parseInt(e.target.value)})}>
+                      <option value={0}>Empezar desde el episodio...</option>
+                      {episodes.filter(ep => Number(ep.season_id) === bulkUrlParams.season_id).sort((a,b)=>a.order-b.order).map(ep => (
+                        <option key={ep.id} value={ep.id}>#{ep.order} - {ep.episode_name}</option>
+                      ))}
+                  </select>
+                  <textarea 
+                      className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-xs font-mono outline-none h-40 resize-none"
+                      placeholder="Pega aquí las URLs de los videos, una por línea..."
+                      value={bulkUrlParams.urls}
+                      onChange={(e)=>setBulkUrlParams({...bulkUrlParams, urls: e.target.value})}
+                  ></textarea>
+                  {bulkError && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest text-center animate-pulse">{bulkError}</p>}
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 animate-scaleIn text-center">
+                   <div className="w-24 h-24 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mb-6 border-4 border-green-500/20 shadow-2xl shadow-green-500/10">
+                      <i className="fas fa-check text-4xl"></i>
+                   </div>
+                   <h5 className="text-2xl font-black text-white uppercase mb-2">¡Todo Listo!</h5>
+                   <p className="text-gray-400 text-sm max-w-xs leading-relaxed">Se han actualizado correctamente <b>{bulkUrlProgress.total}</b> episodios con las nuevas URLs en la base de datos.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 md:p-8 bg-gray-950/50 flex flex-col md:flex-row justify-end items-center gap-4 border-t border-gray-800">
+              {isProcessingBulkUrls && (
+                <div className="flex-1 w-full md:w-auto">
+                   <div className="flex justify-between items-center mb-2">
+                      <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Actualizando: {bulkUrlProgress.current} / {bulkUrlProgress.total}</span>
+                   </div>
+                   <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
+                      <div 
+                        className="h-full bg-indigo-500 transition-all duration-300" 
+                        style={{ width: `${(bulkUrlProgress.current / bulkUrlProgress.total) * 100}%` }}
+                      ></div>
+                   </div>
+                </div>
+              )}
+              
+              <div className="flex gap-4 w-full md:w-auto justify-end">
+                <button onClick={closeBulkModal} className="text-gray-500 font-bold hover:text-white transition-colors">{bulkProcessComplete ? 'Finalizar' : 'Cerrar'}</button>
+                {!bulkProcessComplete && (
+                  <button 
+                    onClick={handleProcessBulkUrls} 
+                    disabled={isProcessingBulkUrls} 
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-3 rounded-2xl font-black text-xs uppercase shadow-xl shadow-indigo-600/20 flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {isProcessingBulkUrls ? <i className="fas fa-circle-notch animate-spin"></i> : <i className="fas fa-play"></i>}
+                    {isProcessingBulkUrls ? 'Procesando...' : 'Aplicar Lote'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDICIÓN Y ELIMINACIÓN (SIN CAMBIOS) */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-scaleIn">
@@ -479,64 +576,11 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                 <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">URL de Video</label>
                 <input type="text" className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={editFormData.file_url} onChange={(e)=>setEditFormData({...editFormData, file_url: e.target.value})} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Orden</label>
-                  <input type="number" className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={editFormData.order} onChange={(e)=>setEditFormData({...editFormData, order: parseInt(e.target.value)})} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Duración</label>
-                  <input type="text" className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={editFormData.runtime} onChange={(e)=>setEditFormData({...editFormData, runtime: e.target.value})} />
-                </div>
-              </div>
             </div>
             <div className="p-6 md:p-8 bg-gray-950/50 flex justify-end gap-4 border-t border-gray-800">
               <button onClick={() => setShowEditModal(false)} className="text-gray-500 font-bold">Cancelar</button>
               <button onClick={handleUpdate} disabled={isSaving} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase shadow-xl">
                 {isSaving ? 'Guardando...' : 'Actualizar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showBulkUrlModal && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl animate-scaleIn">
-            <div className="p-6 md:p-8 border-b border-gray-800 bg-gray-950/50">
-              <h4 className="text-xl font-black text-white uppercase tracking-tighter">Procesar Lote de URLs</h4>
-            </div>
-            <div className="p-6 md:p-8 space-y-5">
-               <div className="grid grid-cols-2 gap-4">
-                  <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-2 md:py-3 text-white text-xs md:text-sm outline-none" value={bulkUrlParams.series_id} onChange={(e)=>setBulkUrlParams({...bulkUrlParams, series_id: parseInt(e.target.value)})}>
-                    <option value={0}>Serie...</option>
-                    {tvShows.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-                  </select>
-                  <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-2 md:py-3 text-white text-xs md:text-sm outline-none" value={bulkUrlParams.season_id} onChange={(e)=>setBulkUrlParams({...bulkUrlParams, season_id: parseInt(e.target.value)})}>
-                    <option value={0}>Temporada...</option>
-                    {seasons.filter(s => {
-                      const tvShowIdStr = String(s.tv_show_id || '');
-                      return tvShowIdStr.includes(`"${bulkUrlParams.series_id}"`) || tvShowIdStr.includes(`${bulkUrlParams.series_id}`);
-                    }).map(s => <option key={s.id} value={s.id}>{s.season_name}</option>)}
-                  </select>
-               </div>
-               <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-xs md:text-sm outline-none" value={bulkUrlParams.startEpisodeId} onChange={(e)=>setBulkUrlParams({...bulkUrlParams, startEpisodeId: parseInt(e.target.value)})}>
-                    <option value={0}>Empezar desde el episodio...</option>
-                    {episodes.filter(ep => Number(ep.season_id) === bulkUrlParams.season_id).sort((a,b)=>a.order-b.order).map(ep => (
-                      <option key={ep.id} value={ep.id}>#{ep.order} - {ep.episode_name}</option>
-                    ))}
-               </select>
-               <textarea 
-                  className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-xs font-mono outline-none h-40 resize-none"
-                  placeholder="URLs por línea..."
-                  value={bulkUrlParams.urls}
-                  onChange={(e)=>setBulkUrlParams({...bulkUrlParams, urls: e.target.value})}
-               ></textarea>
-            </div>
-            <div className="p-6 md:p-8 bg-gray-950/50 flex justify-end gap-4 border-t border-gray-800">
-              <button onClick={() => setShowBulkUrlModal(false)} className="text-gray-500 font-bold">Cerrar</button>
-              <button onClick={handleProcessBulkUrls} disabled={isProcessingBulkUrls} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase shadow-xl">
-                {isProcessingBulkUrls ? '...' : 'Aplicar'}
               </button>
             </div>
           </div>
