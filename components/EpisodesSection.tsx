@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Episode, Season, TVShow } from '../types';
 
@@ -31,10 +32,13 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
   const [isProcessingBulkUrls, setIsProcessingBulkUrls] = useState(false);
   const [tmdbToken, setTmdbToken] = useState(localStorage.getItem('tmdb_token') || DEFAULT_TMDB_TOKEN);
   const [fetchedEpisodes, setFetchedEpisodes] = useState<FetchedEpisode[]>([]);
+  const [selectedEpisodeNumbers, setSelectedEpisodeNumbers] = useState<number[]>([]);
   const [registeringIds, setRegisteringIds] = useState<number[]>([]);
   const [searchParams, setSearchParams] = useState({ series_id: 0, season_id: 0 });
   const [bulkUrlParams, setBulkUrlParams] = useState({ series_id: 0, season_id: 0, startEpisodeId: 0, urls: '' });
   const [editFormData, setEditFormData] = useState<Partial<Episode>>({});
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
 
   useEffect(() => {
     localStorage.setItem('tmdb_token', tmdbToken);
@@ -73,13 +77,6 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       return `https://image.tmdb.org/t/p/w500${path}`;
     }
     if (path.startsWith('http')) return path;
-    
-    if (path.includes('uploads/')) {
-      const domain = API_BASE_URL.split('/api.php')[0];
-      const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-      return `${domain}/${cleanPath}`;
-    }
-
     return path;
   };
 
@@ -89,41 +86,6 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   };
 
-  const handleProcessBulkUrls = async () => {
-    if (!bulkUrlParams.series_id || !bulkUrlParams.season_id || !bulkUrlParams.startEpisodeId || !bulkUrlParams.urls.trim()) {
-      alert("Por favor completa todos los campos del lote.");
-      return;
-    }
-    const urlList = bulkUrlParams.urls.split('\n').map(u => u.trim()).filter(u => u !== '');
-    const seasonEpisodes = episodes
-      .filter(ep => Number(ep.season_id) === Number(bulkUrlParams.season_id))
-      .sort((a, b) => a.order - b.order);
-    const startIndex = seasonEpisodes.findIndex(ep => Number(ep.id) === Number(bulkUrlParams.startEpisodeId));
-    if (startIndex === -1) {
-      alert("Episodio de inicio no encontrado.");
-      return;
-    }
-    const targetEpisodes = seasonEpisodes.slice(startIndex);
-    const maxItems = Math.min(urlList.length, targetEpisodes.length);
-    setIsProcessingBulkUrls(true);
-    const timestamp = getCurrentTimestamp();
-    for (let i = 0; i < maxItems; i++) {
-      const ep = targetEpisodes[i];
-      const url = urlList[i];
-      try {
-        const payload = { ...ep, file_url: url, file_source: 'embed', source_type: 'embed', updated_at: timestamp };
-        await fetch(`${API_BASE_URL}/episodes/${ep.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      } catch (error) { console.error(error); }
-    }
-    setIsProcessingBulkUrls(false);
-    refreshData();
-    setShowBulkUrlModal(false);
-  };
-
   const handleSearchEpisodes = async () => {
     if (!searchParams.series_id || !searchParams.season_id) return;
     const selectedShow = tvShows.find(s => Number(s.id) === searchParams.series_id);
@@ -131,7 +93,8 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
     if (!selectedShow || !selectedSeason) return;
     
     setIsSearching(true);
-    setFetchedEpisodes([]); // Limpiar previos para mostrar loading
+    setFetchedEpisodes([]);
+    setSelectedEpisodeNumbers([]);
     
     try {
       const url = `https://api.themoviedb.org/3/tv/${selectedShow.tmdb_id}/season/${selectedSeason.order}?language=es-ES`;
@@ -144,9 +107,31 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
     finally { setIsSearching(false); }
   };
 
-  const registerFetchedEpisode = async (fe: FetchedEpisode) => {
-    if (registeringIds.includes(fe.episode_number)) return;
-    setRegisteringIds(prev => [...prev, fe.episode_number]);
+  const toggleEpisodeSelection = (episodeNumber: number) => {
+    // Verificar si ya está importado
+    const isRegistered = episodes.some(e => Number(e.season_id) === searchParams.season_id && e.order === episodeNumber);
+    if (isRegistered) return;
+
+    setSelectedEpisodeNumbers(prev => 
+      prev.includes(episodeNumber) 
+        ? prev.filter(num => num !== episodeNumber)
+        : [...prev, episodeNumber]
+    );
+  };
+
+  const handleSelectAll = () => {
+    const availableEpisodes = fetchedEpisodes
+      .filter(fe => !episodes.some(e => Number(e.season_id) === searchParams.season_id && e.order === fe.episode_number))
+      .map(fe => fe.episode_number);
+    
+    if (selectedEpisodeNumbers.length === availableEpisodes.length) {
+      setSelectedEpisodeNumbers([]);
+    } else {
+      setSelectedEpisodeNumbers(availableEpisodes);
+    }
+  };
+
+  const registerEpisode = async (fe: FetchedEpisode) => {
     const posterJson = `{"original_image":"${fe.still_path || ""}"}`.replace(/\//g, '\\/');
     const timestamp = getCurrentTimestamp();
     const payload = {
@@ -165,15 +150,39 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       created_at: timestamp,
       updated_at: timestamp
     };
-    try {
-      await fetch(`${API_BASE_URL}/episodes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      refreshData();
-    } catch (error) { console.error(error); }
-    finally { setRegisteringIds(prev => prev.filter(id => id !== fe.episode_number)); }
+
+    const res = await fetch(`${API_BASE_URL}/episodes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.ok;
+  };
+
+  const handleBulkImport = async () => {
+    if (selectedEpisodeNumbers.length === 0) return;
+    
+    setBulkImporting(true);
+    setImportProgress(0);
+    
+    const episodesToImport = fetchedEpisodes.filter(fe => selectedEpisodeNumbers.includes(fe.episode_number));
+    
+    for (let i = 0; i < episodesToImport.length; i++) {
+      const fe = episodesToImport[i];
+      setRegisteringIds(prev => [...prev, fe.episode_number]);
+      try {
+        await registerEpisode(fe);
+        setImportProgress(i + 1);
+      } catch (error) {
+        console.error("Error al importar episodio", fe.episode_number, error);
+      } finally {
+        setRegisteringIds(prev => prev.filter(id => id !== fe.episode_number));
+      }
+    }
+    
+    refreshData();
+    setBulkImporting(false);
+    setSelectedEpisodeNumbers([]);
   };
 
   const handleUpdate = async () => {
@@ -192,6 +201,58 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       }
     } catch (error) { console.error(error); }
     finally { setIsSaving(false); }
+  };
+
+  // Fix: Implemented handleProcessBulkUrls to handle multiple URL updates sequentially
+  const handleProcessBulkUrls = async () => {
+    if (!bulkUrlParams.series_id || !bulkUrlParams.season_id || !bulkUrlParams.urls.trim()) {
+      alert("Por favor selecciona serie, temporada y añade URLs.");
+      return;
+    }
+
+    const urlList = bulkUrlParams.urls.split('\n').map(u => u.trim()).filter(u => u !== "");
+    if (urlList.length === 0) return;
+
+    setIsProcessingBulkUrls(true);
+    
+    try {
+      const seasonEpisodes = episodes
+        .filter(ep => Number(ep.season_id) === bulkUrlParams.season_id)
+        .sort((a, b) => a.order - b.order);
+      
+      let startIndex = 0;
+      if (bulkUrlParams.startEpisodeId > 0) {
+        startIndex = seasonEpisodes.findIndex(ep => ep.id === bulkUrlParams.startEpisodeId);
+        if (startIndex === -1) startIndex = 0;
+      }
+
+      for (let i = 0; i < urlList.length; i++) {
+        const episode = seasonEpisodes[startIndex + i];
+        if (!episode) break;
+
+        const payload = {
+          ...episode,
+          file_url: urlList[i],
+          updated_at: getCurrentTimestamp()
+        };
+
+        await fetch(`${API_BASE_URL}/episodes/${episode.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+      
+      refreshData();
+      setShowBulkUrlModal(false);
+      setBulkUrlParams({ ...bulkUrlParams, urls: '' });
+      alert("Proceso de lote completado.");
+    } catch (error) {
+      console.error("Error processing bulk URLs:", error);
+      alert("Error al procesar el lote.");
+    } finally {
+      setIsProcessingBulkUrls(false);
+    }
   };
 
   const filteredSeasons = seasons.filter(s => {
@@ -239,20 +300,13 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                     <td className="px-4 md:px-6 py-4">
                       <div className="flex items-center gap-3 md:gap-4">
                         <div className="w-16 h-10 md:w-24 md:h-14 rounded-lg flex-shrink-0 overflow-hidden border border-gray-700 bg-gray-800 shadow-xl">
-                          <img 
-                            src={epImg} 
-                            alt={ep.episode_name} 
-                            className="w-full h-full object-cover" 
-                            onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://via.placeholder.com/500x281?text=Error'; }}
-                          />
+                          <img src={epImg} className="w-full h-full object-cover" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-white font-bold truncate text-xs md:text-sm">{ep.episode_name}</p>
-                          {/* Información de Serie y Temporada Solicitada */}
                           <p className="text-[9px] text-indigo-400 font-bold uppercase tracking-wider mb-1 mt-0.5 truncate">
-                            {show?.title || 'Serie Desconocida'} <span className="mx-1 text-gray-700">•</span> {season?.season_name || 'Temporada Desconocida'}
+                            {show?.title || 'Serie'} <span className="mx-1 text-gray-700">•</span> {season?.season_name || 'Temporada'}
                           </p>
-                          {/* URL con Indicador Rojo para "Sin URL" */}
                           <div className="flex items-center gap-1.5 mt-1">
                             {!hasUrl && <i className="fas fa-circle text-red-500 text-[6px] animate-pulse"></i>}
                             <p className={`text-[10px] font-mono truncate ${!hasUrl ? 'text-red-400 font-bold' : 'text-gray-500'}`}>
@@ -276,7 +330,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         </div>
       </div>
 
-      {/* MODAL IMPORTAR TMDB MEJORADO */}
+      {/* MODAL IMPORTAR TMDB (IMPORTACIÓN MÚLTIPLE) */}
       {showImportModal && (
         <div className="fixed inset-0 bg-black/95 backdrop-blur-md flex items-center justify-center z-[60] p-2 sm:p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[95vh] animate-scaleIn">
@@ -287,7 +341,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
               </button>
             </div>
             
-            <div className="p-5 md:p-8 space-y-6 overflow-y-auto custom-scrollbar">
+            <div className="p-5 md:p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">Serie</label>
@@ -305,15 +359,31 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                 </div>
               </div>
               
-              <button onClick={handleSearchEpisodes} disabled={isSearching} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all shadow-xl disabled:opacity-50">
-                {isSearching ? <i className="fas fa-spinner animate-spin mr-2"></i> : <i className="fas fa-search mr-2"></i>}
-                OBTENER EPISODIOS
+              <button onClick={handleSearchEpisodes} disabled={isSearching} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all shadow-xl disabled:opacity-50 uppercase tracking-widest text-xs flex items-center justify-center gap-2">
+                {isSearching ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-search"></i>}
+                Obtener Episodios
               </button>
 
-              {/* CONTENEDOR DE RESULTADOS / LOADING ANIMATION */}
+              {fetchedEpisodes.length > 0 && (
+                <div className="flex justify-between items-center px-2 py-2 border-b border-gray-800">
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="checkbox" 
+                      id="selectAll"
+                      className="w-4 h-4 rounded border-gray-700 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+                      checked={selectedEpisodeNumbers.length > 0 && selectedEpisodeNumbers.length === fetchedEpisodes.filter(fe => !episodes.some(e => Number(e.season_id) === searchParams.season_id && e.order === fe.episode_number)).length}
+                      onChange={handleSelectAll}
+                    />
+                    <label htmlFor="selectAll" className="text-xs font-bold text-gray-400 uppercase tracking-wider cursor-pointer">Seleccionar todo</label>
+                  </div>
+                  <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
+                    {selectedEpisodeNumbers.length} Seleccionados
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {isSearching ? (
-                  // ANIMACION DE CARGA (SKELETONS)
                   Array.from({length: 4}).map((_, i) => (
                     <div key={i} className="animate-pulse bg-gray-800/20 border border-gray-800/40 p-4 rounded-2xl flex items-center gap-4">
                        <div className="w-20 h-12 bg-gray-800 rounded-lg"></div>
@@ -326,39 +396,74 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                 ) : fetchedEpisodes.length > 0 ? (
                   fetchedEpisodes.map(fe => {
                     const isRegistered = episodes.some(e => Number(e.season_id) === searchParams.season_id && e.order === fe.episode_number);
+                    const isSelected = selectedEpisodeNumbers.includes(fe.episode_number);
                     const isProc = registeringIds.includes(fe.episode_number);
+                    
                     return (
-                      <div key={fe.episode_number} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${isRegistered ? 'bg-gray-800/10 border-gray-800 opacity-60' : 'bg-gray-800/40 border-gray-700 hover:border-indigo-500/50'}`}>
-                        <div className="w-16 h-10 bg-gray-900 rounded-lg overflow-hidden flex-shrink-0">
+                      <div 
+                        key={fe.episode_number} 
+                        onClick={() => toggleEpisodeSelection(fe.episode_number)}
+                        className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${isRegistered ? 'bg-gray-800/10 border-gray-800/40 opacity-50' : isSelected ? 'bg-indigo-600/10 border-indigo-500 shadow-lg shadow-indigo-600/5' : 'bg-gray-800/40 border-gray-700 hover:border-gray-500'}`}
+                      >
+                        <div className="w-16 h-10 bg-gray-900 rounded-lg overflow-hidden flex-shrink-0 relative">
                           <img src={getImageUrl(fe.still_path)} className="w-full h-full object-cover" />
+                          {isRegistered && (
+                            <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
+                              <i className="fas fa-check text-green-500 text-xl drop-shadow-lg"></i>
+                            </div>
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-[11px] font-bold text-white truncate">E{fe.episode_number}: {fe.name}</p>
                           <p className="text-[9px] text-gray-500 truncate mt-0.5">{fe.overview ? 'Con info' : 'Sin info'}</p>
                         </div>
-                        <button 
-                          disabled={isRegistered || isProc}
-                          onClick={() => registerFetchedEpisode(fe)}
-                          className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${isRegistered ? 'text-green-500' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20'}`}
-                        >
-                          {isProc ? <i className="fas fa-spinner animate-spin"></i> : isRegistered ? 'IMPORTADO' : 'IMPORTAR'}
-                        </button>
+                        
+                        <div className="flex items-center gap-3">
+                           {!isRegistered && (
+                             <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-gray-600'}`}>
+                                {isSelected && <i className="fas fa-check text-[10px] text-white"></i>}
+                             </div>
+                           )}
+                           {isRegistered && <span className="text-[9px] font-black text-green-500 uppercase tracking-widest">OK</span>}
+                        </div>
                       </div>
                     );
                   })
                 ) : (
-                  <div className="col-span-full py-10 text-center text-gray-600">
-                     <i className="fas fa-info-circle mb-2 block text-xl"></i>
-                     Selecciona los parámetros y pulsa buscar.
+                  <div className="col-span-full py-16 text-center text-gray-600">
+                     <i className="fas fa-cloud-download-alt mb-4 block text-4xl opacity-20"></i>
+                     <p className="text-sm font-medium">Selecciona los parámetros y pulsa buscar para importar episodios.</p>
                   </div>
                 )}
               </div>
             </div>
+
+            {/* BARRA DE ACCIONES PARA IMPORTACIÓN MASIVA */}
+            {selectedEpisodeNumbers.length > 0 && (
+              <div className="p-6 bg-gray-950/80 border-t border-gray-800 flex items-center justify-between animate-fadeIn">
+                 <div className="flex flex-col">
+                    <span className="text-xs font-bold text-white uppercase tracking-widest">
+                       {bulkImporting ? 'Procesando Lote...' : 'Listo para importar'}
+                    </span>
+                    <span className="text-[10px] text-gray-500 mt-1">
+                       {bulkImporting ? `Progreso: ${importProgress} de ${selectedEpisodeNumbers.length}` : `${selectedEpisodeNumbers.length} episodios seleccionados para la base de datos`}
+                    </span>
+                 </div>
+                 <button 
+                  onClick={handleBulkImport}
+                  disabled={bulkImporting}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-black px-8 py-3 rounded-2xl text-xs uppercase tracking-widest shadow-2xl shadow-indigo-600/40 flex items-center gap-3 active:scale-95 transition-all disabled:opacity-50"
+                 >
+                    {bulkImporting ? <i className="fas fa-circle-notch animate-spin"></i> : <i className="fas fa-bolt"></i>}
+                    {bulkImporting ? 'Importando...' : 'Importar Seleccionados'}
+                 </button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* OTROS MODALES SE MANTIENEN IGUAL PERO CON MEJORAS DE ESPACIADO MOVIL */}
+      {/* MODAL EDICION */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-scaleIn">
