@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Episode, Season, TVShow } from '../types';
 
@@ -38,7 +39,13 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
   const [selectedEpisodeNumbers, setSelectedEpisodeNumbers] = useState<number[]>([]);
   const [registeringIds, setRegisteringIds] = useState<number[]>([]);
   const [searchParams, setSearchParams] = useState({ series_id: 0, season_id: 0 });
-  const [bulkUrlParams, setBulkUrlParams] = useState({ series_id: 0, season_id: 0, startEpisodeId: 0, urls: '' });
+  const [bulkUrlParams, setBulkUrlParams] = useState({ 
+    series_id: 0, 
+    season_id: 0, 
+    startEpisodeId: 0, 
+    urls: '',
+    source_type: 'embed' as 'embed' | 'm3u8'
+  });
   const [editFormData, setEditFormData] = useState<Partial<Episode>>({});
   const [bulkImporting, setBulkImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
@@ -142,8 +149,8 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
       episode_name: fe.name,
       slug: fe.name.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, ''),
       description: fe.overview,
-      file_source: 'server',
-      source_type: 'mp4',
+      file_source: 'embed',
+      source_type: 'embed',
       file_url: '', 
       order: fe.episode_number,
       runtime: fe.runtime ? `${fe.runtime} min` : '0 min',
@@ -239,6 +246,8 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         const payload = {
           ...episode,
           file_url: urlList[i],
+          file_source: bulkUrlParams.source_type,
+          source_type: bulkUrlParams.source_type,
           updated_at: getCurrentTimestamp()
         };
 
@@ -266,7 +275,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
     setBulkProcessComplete(false);
     setBulkUrlProgress({ current: 0, total: 0 });
     setBulkError('');
-    setBulkUrlParams({ ...bulkUrlParams, urls: '' });
+    setBulkUrlParams({ ...bulkUrlParams, urls: '', source_type: 'embed' });
   };
 
   const filteredSeasons = seasons.filter(s => {
@@ -326,6 +335,11 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                             <p className={`text-[10px] font-mono truncate ${!hasUrl ? 'text-red-400 font-bold' : 'text-gray-500'}`}>
                                 {hasUrl ? ep.file_url : 'Sin URL'}
                             </p>
+                            {hasUrl && (
+                                <span className="ml-2 text-[9px] font-black uppercase bg-gray-800 text-indigo-300 px-1.5 py-0.5 rounded border border-gray-700">
+                                    {ep.source_type}
+                                </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -473,7 +487,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         </div>
       )}
 
-      {/* MODAL PROCESAR LOTE DE URLS (REDISEÑADO) */}
+      {/* MODAL PROCESAR LOTE DE URLS (ACTUALIZADO CON SELECTOR DE TIPO) */}
       {showBulkUrlModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl animate-scaleIn">
@@ -502,6 +516,26 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                       }).map(s => <option key={s.id} value={s.id}>{s.season_name}</option>)}
                     </select>
                   </div>
+                  
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">Tipo de Fuente</label>
+                    <div className="flex gap-2 p-1 bg-gray-800 rounded-xl border border-gray-700">
+                        {(['embed', 'm3u8'] as const).map((type) => (
+                        <button
+                            key={type}
+                            onClick={() => setBulkUrlParams({...bulkUrlParams, source_type: type})}
+                            className={`flex-1 py-2 text-[10px] font-black rounded-lg transition-all uppercase tracking-widest ${
+                                bulkUrlParams.source_type === type 
+                                ? 'bg-indigo-600 text-white shadow-lg' 
+                                : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                            }`}
+                        >
+                            {type}
+                        </button>
+                        ))}
+                    </div>
+                  </div>
+
                   <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-xs md:text-sm outline-none" value={bulkUrlParams.startEpisodeId} onChange={(e)=>setBulkUrlParams({...bulkUrlParams, startEpisodeId: parseInt(e.target.value)})}>
                       <option value={0}>Empezar desde el episodio...</option>
                       {episodes.filter(ep => Number(ep.season_id) === bulkUrlParams.season_id).sort((a,b)=>a.order-b.order).map(ep => (
@@ -522,7 +556,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
                       <i className="fas fa-check text-4xl"></i>
                    </div>
                    <h5 className="text-2xl font-black text-white uppercase mb-2">¡Todo Listo!</h5>
-                   <p className="text-gray-400 text-sm max-w-xs leading-relaxed">Se han actualizado correctamente <b>{bulkUrlProgress.total}</b> episodios con las nuevas URLs en la base de datos.</p>
+                   <p className="text-gray-400 text-sm max-w-xs leading-relaxed">Se han actualizado correctamente <b>{bulkUrlProgress.total}</b> episodios con las nuevas URLs y tipo de fuente <b>{bulkUrlParams.source_type}</b>.</p>
                 </div>
               )}
             </div>
@@ -560,7 +594,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         </div>
       )}
 
-      {/* MODAL EDICIÓN Y ELIMINACIÓN (SIN CAMBIOS) */}
+      {/* MODAL EDICIÓN Y ELIMINACIÓN */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-scaleIn">
@@ -575,6 +609,15 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">URL de Video</label>
                 <input type="text" className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={editFormData.file_url} onChange={(e)=>setEditFormData({...editFormData, file_url: e.target.value})} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Tipo de Fuente</label>
+                <select className="w-full bg-gray-800 border-2 border-transparent focus:border-indigo-500 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all" value={editFormData.source_type} onChange={(e)=>setEditFormData({...editFormData, source_type: e.target.value, file_source: e.target.value})}>
+                  <option value="embed">EMBED</option>
+                  <option value="m3u8">M3U8</option>
+                  <option value="server">SERVER</option>
+                  <option value="mp4">MP4</option>
+                </select>
               </div>
             </div>
             <div className="p-6 md:p-8 bg-gray-950/50 flex justify-end gap-4 border-t border-gray-800">
