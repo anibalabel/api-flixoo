@@ -54,7 +54,7 @@ $now = date('Y-m-d H:i:s');
 
 // --- RUTAS ---
 
-// 1. TV SHOWS (Obtener: id, title, tmdb_id, thumbnail)
+// 1. TV SHOWS
 if ($resource == 'tv_shows') {
     if ($method == 'GET') {
         $stmt = $pdo->query("SELECT id, title, tmdb_id, thumbnail FROM tv_shows ORDER BY id DESC");
@@ -78,7 +78,7 @@ if ($resource == 'tv_shows') {
     }
 }
 
-// 2. SEASONS (Obtener: id, tv_show_id, slug, season_name, order, status)
+// 2. SEASONS
 elseif ($resource == 'seasons') {
     if ($method == 'GET') {
         $stmt = $pdo->query("SELECT id, tv_show_id, slug, season_name, \`order\`, status FROM seasons ORDER BY id DESC");
@@ -86,39 +86,18 @@ elseif ($resource == 'seasons') {
     } 
     elseif ($method == 'POST') {
         $data = json_decode(file_get_contents('php://input'), true);
-        
-        // Requisito especial: tv_show_id guardado como ["1"]
         $raw_id = (string)$data['tv_show_id'];
         $tv_show_id = '["' . $raw_id . '"]';
-        
         $sql = "INSERT INTO seasons (tv_show_id, slug, season_name, \`order\`, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        $pdo->prepare($sql)->execute([
-            $tv_show_id, 
-            $data['slug'], 
-            $data['season_name'], 
-            $data['order'], 
-            (int)$data['status'], 
-            $now, 
-            $now
-        ]);
+        $pdo->prepare($sql)->execute([$tv_show_id, $data['slug'], $data['season_name'], $data['order'], (int)$data['status'], $now, $now]);
         echo json_encode(["status" => "success", "id" => $pdo->lastInsertId()]);
     }
     elseif ($method == 'PUT' && $id) {
         $data = json_decode(file_get_contents('php://input'), true);
-        
         $raw_id = (string)$data['tv_show_id'];
         $tv_show_id = strpos($raw_id, '[') === false ? '["' . $raw_id . '"]' : $raw_id;
-        
         $sql = "UPDATE seasons SET tv_show_id=?, slug=?, season_name=?, \`order\`=?, status=?, updated_at=? WHERE id=?";
-        $pdo->prepare($sql)->execute([
-            $tv_show_id, 
-            $data['slug'], 
-            $data['season_name'], 
-            $data['order'], 
-            (int)$data['status'], 
-            $now, 
-            $id
-        ]);
+        $pdo->prepare($sql)->execute([$tv_show_id, $data['slug'], $data['season_name'], $data['order'], (int)$data['status'], $now, $id]);
         echo json_encode(["status" => "success"]);
     }
     elseif ($method == 'DELETE' && $id) {
@@ -127,7 +106,7 @@ elseif ($resource == 'seasons') {
     }
 }
 
-// 3. EPISODES (Obtener: todos los campos solicitados)
+// 3. EPISODES
 elseif ($resource == 'episodes') {
     if ($method == 'GET') {
         $stmt = $pdo->query("SELECT id, season_id, series_id, episode_name, slug, description, file_source, source_type, file_url, \`order\`, runtime, poster, total_view FROM episodes ORDER BY id DESC");
@@ -136,50 +115,42 @@ elseif ($resource == 'episodes') {
     elseif ($method == 'POST') {
         $d = json_decode(file_get_contents('php://input'), true);
         $sql = "INSERT INTO episodes (season_id, series_id, episode_name, slug, description, file_source, source_type, file_url, \`order\`, runtime, poster, total_view, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        $pdo->prepare($sql)->execute([
-            $d['season_id'], 
-            $d['series_id'], 
-            $d['episode_name'], 
-            $d['slug'], 
-            $d['description'], 
-            $d['file_source'], 
-            $d['source_type'], 
-            $d['file_url'], 
-            $d['order'], 
-            $d['runtime'], 
-            $d['poster'], 
-            0, 
-            $now, 
-            $now
-        ]);
+        $pdo->prepare($sql)->execute([$d['season_id'], $d['series_id'], $d['episode_name'], $d['slug'], $d['description'], $d['file_source'], $d['source_type'], $d['file_url'], $d['order'], $d['runtime'], $d['poster'], 0, $now, $now]);
         echo json_encode(["status" => "success", "id" => $pdo->lastInsertId()]);
     }
     elseif ($method == 'PUT' && $id) {
         $d = json_decode(file_get_contents('php://input'), true);
         $sql = "UPDATE episodes SET season_id=?, series_id=?, episode_name=?, slug=?, description=?, file_source=?, source_type=?, file_url=?, \`order\`=?, runtime=?, poster=?, total_view=?, updated_at=? WHERE id=?";
-        $pdo->prepare($sql)->execute([
-            $d['season_id'], 
-            $d['series_id'], 
-            $d['episode_name'], 
-            $d['slug'], 
-            $d['description'], 
-            $d['file_source'], 
-            $d['source_type'], 
-            $d['file_url'], 
-            $d['order'], 
-            $d['runtime'], 
-            $d['poster'], 
-            $d['total_view'], 
-            $now, 
-            $id
-        ]);
+        $pdo->prepare($sql)->execute([$d['season_id'], $d['series_id'], $d['episode_name'], $d['slug'], $d['description'], $d['file_source'], $d['source_type'], $d['file_url'], $d['order'], $d['runtime'], $d['poster'], $d['total_view'], $now, $id]);
         echo json_encode(["status" => "success"]);
     }
     elseif ($method == 'DELETE' && $id) {
         $pdo->prepare("DELETE FROM episodes WHERE id = ?")->execute([$id]);
         echo json_encode(["status" => "success"]);
     }
-} else {
+}
+
+// 4. MOVIES (Listar id, title, thumbnail, is_featured y Actualizar)
+elseif ($resource == 'movies') {
+    if ($method == 'GET') {
+        $stmt = $pdo->query("SELECT id, title, thumbnail, is_featured FROM movies ORDER BY id DESC");
+        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+    elseif ($method == 'PUT' && $id) {
+        $data = json_decode(file_get_contents('php://input'), true);
+        // Actualización de id (generalmente no se cambia pero se incluye según solicitud), title, thumbnail e is_featured
+        $sql = "UPDATE movies SET title=?, thumbnail=?, is_featured=? WHERE id=?";
+        $pdo->prepare($sql)->execute([
+            $data['title'], 
+            $data['thumbnail'], 
+            (int)$data['is_featured'], 
+            $id
+        ]);
+        echo json_encode(["status" => "success"]);
+    }
+}
+
+else {
     http_response_code(404);
     echo json_encode(["error" => "Ruta no válida"]);
 }
@@ -221,9 +192,9 @@ elseif ($resource == 'episodes') {
              <i className="fas fa-info-circle"></i> Notas de Implementación
            </h4>
            <ul className="text-xs text-gray-400 space-y-2 list-disc pl-4">
-             <li>El campo <b>tv_show_id</b> en la tabla <i>seasons</i> se guarda como un array JSON (Ej: <code className="text-indigo-300">["1"]</code>) según su solicitud.</li>
-             <li>Los campos <b>created_at</b> y <b>updated_at</b> utilizan el formato de marca de tiempo completo.</li>
-             <li>Asegúrese de subir el archivo <code className="text-white">api.php</code> a su servidor <code className="text-white">apiflixy.plusmovie.pw</code>.</li>
+             <li>El campo <b>tv_show_id</b> en la tabla <i>seasons</i> se guarda como un array JSON (Ej: <code className="text-indigo-300">["1"]</code>).</li>
+             <li>El recurso <b>movies</b> soporta la actualización de <b>is_featured</b> para la sección de destacados.</li>
+             <li>Los campos <b>created_at</b> y <b>updated_at</b> utilizan marcas de tiempo completas.</li>
            </ul>
         </div>
       </div>

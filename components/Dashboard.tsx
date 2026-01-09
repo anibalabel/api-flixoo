@@ -1,16 +1,16 @@
-
 import React from 'react';
 
 interface DashboardProps {
   tvCount: number;
   seasonCount: number;
   episodeCount: number;
+  movieCount?: number;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ tvCount, seasonCount, episodeCount }) => {
+const Dashboard: React.FC<DashboardProps> = ({ tvCount, seasonCount, episodeCount, movieCount = 0 }) => {
   return (
     <div className="space-y-8 animate-fadeIn">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800 shadow-xl">
           <div className="flex items-center justify-between mb-4">
             <div className="w-12 h-12 bg-indigo-900/30 rounded-xl flex items-center justify-center text-indigo-400">
@@ -42,6 +42,17 @@ const Dashboard: React.FC<DashboardProps> = ({ tvCount, seasonCount, episodeCoun
           </div>
           <p className="text-gray-400 text-sm font-medium">Episodes</p>
           <h3 className="text-3xl font-bold text-white mt-1">{episodeCount}</h3>
+        </div>
+
+        <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800 shadow-xl">
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-12 h-12 bg-pink-900/30 rounded-xl flex items-center justify-center text-pink-400">
+              <i className="fas fa-film text-2xl"></i>
+            </div>
+            <span className="text-indigo-400 text-xs font-bold bg-indigo-900/20 px-2 py-1 rounded-full">New</span>
+          </div>
+          <p className="text-gray-400 text-sm font-medium">Movies</p>
+          <h3 className="text-3xl font-bold text-white mt-1">{movieCount}</h3>
         </div>
       </div>
 

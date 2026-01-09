@@ -35,4 +35,11 @@ export interface Episode {
   updated_at?: string;
 }
 
-export type ViewType = 'DASHBOARD' | 'TV_SHOWS' | 'SEASONS' | 'EPISODES' | 'API_CODE';
+export interface Movie {
+  id: number;
+  title: string;
+  thumbnail: string; // Formato JSON: {"original_image":"..."}
+  is_featured: number; // 0 o 1
+}
+
+export type ViewType = 'DASHBOARD' | 'TV_SHOWS' | 'SEASONS' | 'EPISODES' | 'MOVIES' | 'FEATURED' | 'API_CODE';

@@ -14,6 +14,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, isOpen, on
     { id: 'TV_SHOWS', label: 'TV Shows', icon: 'fa-tv' },
     { id: 'SEASONS', label: 'Seasons', icon: 'fa-layer-group' },
     { id: 'EPISODES', label: 'Episodes', icon: 'fa-clapperboard' },
+    { id: 'MOVIES', label: 'Movies', icon: 'fa-film' },
+    { id: 'FEATURED', label: 'Featured', icon: 'fa-star' },
     { id: 'API_CODE', label: 'API Implementation', icon: 'fa-code' },
   ];
 

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { ViewType, TVShow, Season, Episode } from './types';
+import { ViewType, TVShow, Season, Episode, Movie } from './types';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import TVShowsSection from './components/TVShowsSection';
 import SeasonsSection from './components/SeasonsSection';
 import EpisodesSection from './components/EpisodesSection';
+import MoviesSection from './components/MoviesSection';
+import FeaturedSection from './components/FeaturedSection';
 import BackendCodeSection from './components/BackendCodeSection';
 import Dashboard from './components/Dashboard';
 import Login from './components/Login';
@@ -23,6 +25,7 @@ const App: React.FC = () => {
   const [tvShows, setTvShows] = useState<TVShow[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [movies, setMovies] = useState<Movie[]>([]);
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -33,10 +36,11 @@ const App: React.FC = () => {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [showsRes, seasonsRes, episodesRes] = await Promise.all([
+      const [showsRes, seasonsRes, episodesRes, moviesRes] = await Promise.all([
         fetch(`${API_BASE_URL}/tv_shows`),
         fetch(`${API_BASE_URL}/seasons`),
-        fetch(`${API_BASE_URL}/episodes`)
+        fetch(`${API_BASE_URL}/episodes`),
+        fetch(`${API_BASE_URL}/movies`)
       ]);
 
       if (showsRes.ok) {
@@ -50,6 +54,10 @@ const App: React.FC = () => {
       if (episodesRes.ok) {
         const data: Episode[] = await episodesRes.json();
         setEpisodes(data.sort((a, b) => b.id - a.id));
+      }
+      if (moviesRes.ok) {
+        const data: Movie[] = await moviesRes.json();
+        setMovies(data.sort((a, b) => b.id - a.id));
       }
     } catch (error) {
       console.error("Error fetching data from API:", error);
@@ -75,17 +83,21 @@ const App: React.FC = () => {
 
     switch (activeView) {
       case 'DASHBOARD':
-        return <Dashboard tvCount={tvShows.length} seasonCount={seasons.length} episodeCount={episodes.length} />;
+        return <Dashboard tvCount={tvShows.length} seasonCount={seasons.length} episodeCount={episodes.length} movieCount={movies.length} />;
       case 'TV_SHOWS':
         return <TVShowsSection tvShows={tvShows} refreshData={fetchData} />;
       case 'SEASONS':
         return <SeasonsSection seasons={seasons} tvShows={tvShows} episodes={episodes} setSeasons={setSeasons} refreshData={fetchData} />;
       case 'EPISODES':
         return <EpisodesSection episodes={episodes} seasons={seasons} tvShows={tvShows} setEpisodes={setEpisodes} refreshData={fetchData} />;
+      case 'MOVIES':
+        return <MoviesSection movies={movies} refreshData={fetchData} />;
+      case 'FEATURED':
+        return <FeaturedSection movies={movies} refreshData={fetchData} />;
       case 'API_CODE':
         return <BackendCodeSection />;
       default:
-        return <Dashboard tvCount={tvShows.length} seasonCount={seasons.length} episodeCount={episodes.length} />;
+        return <Dashboard tvCount={tvShows.length} seasonCount={seasons.length} episodeCount={episodes.length} movieCount={movies.length} />;
     }
   };
 

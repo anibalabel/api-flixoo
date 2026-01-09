@@ -14,6 +14,8 @@ const Header: React.FC<HeaderProps> = ({ activeView, toggleSidebar, onLogout }) 
       case 'TV_SHOWS': return 'Manage TV Shows';
       case 'SEASONS': return 'Manage Seasons';
       case 'EPISODES': return 'Manage Episodes';
+      case 'MOVIES': return 'Manage Movies';
+      case 'FEATURED': return 'Featured Content';
       case 'API_CODE': return 'Rest API Developer Docs';
       default: return 'OxooFlix Admin';
     }
