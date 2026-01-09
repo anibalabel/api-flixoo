@@ -141,7 +141,10 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
   };
 
   const registerEpisode = async (fe: FetchedEpisode) => {
-    const posterJson = `{"original_image":"${fe.still_path || ""}"}`.replace(/\//g, '\\/');
+    // MODIFICACIÓN: Se añade la base de la URL de TMDB antes del path de la imagen
+    const fullPosterPath = fe.still_path ? `https://image.tmdb.org/t/p/w500${fe.still_path}` : "";
+    const posterJson = `{"original_image":"${fullPosterPath}"}`.replace(/\//g, '\\/');
+    
     const timestamp = getCurrentTimestamp();
     const payload = {
       season_id: searchParams.season_id,
@@ -487,7 +490,7 @@ const EpisodesSection: React.FC<EpisodesSectionProps> = ({ episodes, seasons, tv
         </div>
       )}
 
-      {/* MODAL PROCESAR LOTE DE URLS (ACTUALIZADO CON SELECTOR DE TIPO) */}
+      {/* MODAL PROCESAR LOTE DE URLS */}
       {showBulkUrlModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[60] p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl animate-scaleIn">
